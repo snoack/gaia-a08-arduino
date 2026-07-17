@@ -38,10 +38,12 @@ static char statusTopic[48];    // GAIA/<mac>/status        (device availability
 // topic is shared (dataTopic) and each entity extracts its own field via a
 // value_template.
 static void haSensor(const char *key, const char *name, const char *devClass,
-                     const char *unit)
+                     const char *unit, const char *stateClass,
+                     const char *const *options = nullptr, size_t optionCount = 0,
+                     const char *icon = nullptr)
 {
     JsonDocument cfg;
-    char buf[48]; // worst-case value len is 37 chars (val_tpl)
+    char buf[48]; // worst-case value len is 40 chars (val_tpl)
     cfg["name"] = name;
     snprintf(buf, sizeof(buf), "%s_%s", mac, key);
     cfg["uniq_id"] = buf;
@@ -49,8 +51,19 @@ static void haSensor(const char *key, const char *name, const char *devClass,
     snprintf(buf, sizeof(buf), "{{ value_json.readings.%s }}", key);
     cfg["val_tpl"] = buf;
     cfg["dev_cla"] = devClass;
-    cfg["unit_of_meas"] = unit;
-    cfg["stat_cla"] = "measurement";
+    if (unit)
+    {
+        cfg["unit_of_meas"] = unit;
+    }
+    if (stateClass)
+    {
+        cfg["stat_cla"] = stateClass;
+    }
+    copyArray(options, optionCount, cfg["ops"]);
+    if (icon)
+    {
+        cfg["ic"] = icon;
+    }
 
     // Device availability applies to every entity.
     cfg["avty"][0]["t"] = statusTopic;
@@ -66,7 +79,7 @@ static void haSensor(const char *key, const char *name, const char *devClass,
     snprintf(topic, sizeof(topic),
              HOME_ASSISTANT_DISCOVERY_PREFIX "/sensor/%s/%s/config", mac, key);
 
-    char payload[512]; // worst-case json len is 352 bytes
+    char payload[512]; // worst-case json len is 354 bytes
     size_t len = serializeJson(cfg, payload, sizeof(payload));
     esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
 }
@@ -75,15 +88,25 @@ static void haSensor(const char *key, const char *name, const char *devClass,
 // entities. Called on every (re)connect to re-announce after reconnects.
 static void haPublishDiscovery()
 {
-    haSensor("pm1", "PM1", "pm1", "µg/m³");
-    haSensor("pm25", "PM2.5", "pm25", "µg/m³");
-    haSensor("pm10", "PM10", "pm10", "µg/m³");
-    haSensor("temperature", "Temperature", "temperature", "°C");
-    haSensor("humidity", "Humidity", "humidity", "%");
+    haSensor("pm1", "PM1", "pm1", "µg/m³", "measurement");
+    haSensor("pm25", "PM2.5", "pm25", "µg/m³", "measurement");
+    haSensor("pm10", "PM10", "pm10", "µg/m³", "measurement");
+    haSensor("temperature", "Temperature", "temperature", "°C", "measurement");
+    haSensor("humidity", "Humidity", "humidity", "%", "measurement");
     if (co2.hasData())
     {
-        haSensor("co2", "CO2", "carbon_dioxide", "ppm");
+        haSensor("co2", "CO2", "carbon_dioxide", "ppm", "measurement");
     }
+    // The "aqi" device class is unitless (no unit_of_measurement). Exposing it
+    // as an entity also makes the device usable with the air-visual-card
+    // Lovelace card.
+    haSensor("aqi", "AQI", "aqi", nullptr, "measurement");
+    // The dominant pollutant is an "enum" keyword sensor feeding the
+    // air-visual-card's "main_pollutant".
+    static const char *const pollutantOptions[] = {"pm25", "pm10"};
+    haSensor("main_pollutant", "Dominant Pollutant", "enum", nullptr, nullptr,
+             pollutantOptions, sizeof(pollutantOptions) / sizeof(pollutantOptions[0]),
+             "mdi:molecule");
 }
 #endif // CONF_HOME_ASSISTANT
 
@@ -130,7 +153,7 @@ void mqttWorker(void *params)
             return;
         }
         size_t json_len = measureJson(doc);
-        static unsigned char json_body[256]; // expected json len is 225 bytes
+        static unsigned char json_body[320]; // worst-case json len is 280 bytes
         serializeJson(doc, json_body, sizeof(json_body));
 
         // Serial.printf("Posting: %s with len %d \n", json_body, json_len);
