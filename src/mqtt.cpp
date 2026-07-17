@@ -58,13 +58,13 @@ void mqttWorker(void *params)
         if (WiFi.status() != WL_CONNECTED)
         {
             Serial.println("Error in WiFi connection");
-            return;
+            continue;
         }
 
         JsonDocument doc;
         if (!getMinimalSensorData(doc))
         {
-            return;
+            continue;
         }
         size_t json_len = measureJson(doc);
         static unsigned char json_body[256]; // expected json len is 225 bytes

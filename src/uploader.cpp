@@ -66,13 +66,13 @@ void uploaderWorker(void *params)
         if (WiFi.status() != WL_CONNECTED)
         {
             Serial.println("Error in WiFi connection");
-            return;
+            continue;
         }
 
         JsonDocument doc;
         if (!getSerialisedSensorData(doc))
         {
-            return;
+            continue;
         }
         uploaderResetCurrentStatus();
 
