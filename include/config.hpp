@@ -48,6 +48,14 @@ server from which one can get the real-time data.
 #define MQTT_PORT 1883
 #define MQTT_USERNAME ""
 #define MQTT_PASSWORD ""
+
+// Comment to disable Home Assistant MQTT discovery so the device automatically
+// appears in Home Assistant (managed by its built-in MQTT integration).
+#define CONF_HOME_ASSISTANT
+
+// Only change this if you have set a non-default discovery_prefix in
+// Home Assistant's MQTT integration options.
+#define HOME_ASSISTANT_DISCOVERY_PREFIX "homeassistant"
 #endif
 
 // Set to 2 if you have two PMS sensors connected
