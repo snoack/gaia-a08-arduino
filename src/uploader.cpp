@@ -47,16 +47,6 @@ void UploadDataToAQIC(unsigned char *json_body, size_t request_len)
     http.end();
 }
 
-void uploaderResetCurrentStatus()
-{
-    pm10.reset();
-    pm25.reset();
-    pm1.reset();
-    temperature.reset();
-    humidity.reset();
-    co2.reset();
-}
-
 void uploaderWorker(void *params)
 {
     while (1)
@@ -74,8 +64,6 @@ void uploaderWorker(void *params)
         {
             return;
         }
-        uploaderResetCurrentStatus();
-
         size_t json_len = measureJson(doc);
         static unsigned char json_body[512]; // expected json len is 422
         serializeJson(doc, json_body, sizeof(json_body));
