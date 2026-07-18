@@ -29,17 +29,7 @@ AsyncWebServer server(80);
 void webServerRealtimeHandler(AsyncWebServerRequest *request)
 {
     JsonDocument doc;
-    if (!pm25.hasData())
-    {
-        request->send(200, "application/json", "{\"status\":\"error\",\"reason\":\"no PM2.5 data\"}");
-        return;
-    }
-
-    if (!getMinimalSensorData(doc))
-    {
-        request->send(200, "application/json", "{\"status\":\"error\"}");
-        return;
-    }
+    getMinimalSensorData(doc);
 
     static char json_body[512];
     serializeJson(doc, json_body, sizeof(json_body));
