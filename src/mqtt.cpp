@@ -105,7 +105,7 @@ static void haPublishDiscovery()
     haSensor("pm10", "PM10", "pm10", "µg/m³", "measurement");
     haSensor("temperature", "Temperature", "temperature", "°C", "measurement");
     haSensor("humidity", "Humidity", "humidity", "%", "measurement");
-    if (co2.hasData())
+    if (co2SensorAvailable())
     {
         haSensor("co2", "CO2", "carbon_dioxide", "ppm", "measurement");
     }

@@ -86,9 +86,9 @@ void getMinimalSensorData(JsonDocument &doc)
         doc["readings"]["main_pollutant"] = nullptr;
     }
 
-    if (co2.hasData())
+    if (co2SensorAvailable())
     {
-        doc["readings"]["co2"] = round(co2.avg());
+        addOptionalReading(doc["readings"]["co2"], co2.hasData(), round(co2.avg()));
     }
 }
 

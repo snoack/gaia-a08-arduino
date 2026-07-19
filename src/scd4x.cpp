@@ -16,6 +16,7 @@
  *
  */
 
+#include <atomic>
 #include <SensirionI2CScd4x.h>
 #include "main.hpp"
 #include "sensors.hpp"
@@ -26,6 +27,12 @@ void scd4xSensorWorker(void *parameter);
 int scd4xErrorCount = 0;
 
 Accumulator<int> co2;
+static std::atomic<bool> co2SensorPresent{false};
+
+bool co2SensorAvailable()
+{
+    return co2SensorPresent.load(std::memory_order_relaxed);
+}
 
 void printUint16Hex(uint16_t value)
 {
@@ -122,6 +129,8 @@ void scd4xSensorInit()
         return;
     }
     scd4xErrorCount = 0;
+    // A successful SCD4x command confirms that the optional sensor is present.
+    co2SensorPresent.store(true, std::memory_order_relaxed);
 
     uint16_t serial0;
     uint16_t serial1;
