@@ -30,9 +30,14 @@ void webServerRealtimeHandler(AsyncWebServerRequest *request)
 {
     JsonDocument doc = getSensorDataJson();
 
-    static char json_body[512];
-    serializeJson(doc, json_body, sizeof(json_body));
-    request->send(200, "application/json", json_body);
+    // AsyncResponseStream owns its buffer and is freed once the response has
+    // been sent, so the JSON does not have to outlive this handler. A shared
+    // buffer would not do: responses are sent asynchronously, and concurrent
+    // requests would overwrite each other's payload.
+    AsyncResponseStream *response =
+        request->beginResponseStream("application/json");
+    serializeJson(doc, *response);
+    request->send(response);
 }
 
 void webServerInit()
