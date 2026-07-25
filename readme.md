@@ -7,17 +7,20 @@ This repository is the open-source Arduino firmware used for the
 
 ## Configuration
 
-To start with, you need to update the `config.h` file with your your aqicn.org
+To start with, you need to update the `config.h` file with your aqicn.org
 Data-Platform token and the station location:
 
 ```C
-#define TOKEN "dummy-token-for-test-purpose-only"
+#define AQICN_TOKEN "dummy-token-for-test-purpose-only"
 
 #define LATITUDE 48.756080
 #define LONGITUDE 2.302038
 ```
 
 You can get your own token from https://aqicn.org/data-platform/token/
+
+Uploads to aqicn.org are enabled by default. To disable them,
+comment out `CONF_AQICN`; the token and coordinates aren't needed then.
 
 By default, the device will use the
 [Wi-Fi Manager](https://github.com/tzapu/WiFiManager) to connect to your Wi-Fi
@@ -89,8 +92,8 @@ https://github.com/aqicn/gaia-a08-arduino/tree/arduino
 
 ## Running
 
-Once the sensor is running with the firmware, you can check your station Data
-from https://aqicn.org/data-feed/verification/.
+Once the sensor is running with the firmware, and `CONF_AQICN` is enabled, you
+can check your station Data from https://aqicn.org/data-feed/verification/.
 
 To see you station, you first need to enter the token you previously got from
 the aqicn.org data-platform.

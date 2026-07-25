@@ -56,7 +56,9 @@ void setup()
     rgbLedInit();
     ledInit();
     scd4xSensorInit();
+#ifdef ANY_UPLOADER_ENABLED
     uploaderInit();
+#endif
 
     wifiInit();
 #ifdef CONF_MQTT

@@ -28,11 +28,24 @@ server from which one can get the real-time data.
 */
 #define CONF_USE_WEB_SERVER
 
-// Get your own token from  https://aqicn.org/data-platform/token/
-#define TOKEN "dummy-token-for-test-purpose-only"
+/*
+aqicn.org support. Comment out to disable uploads.
+*/
+#define CONF_AQICN
 
+#ifdef CONF_AQICN
+// Get your own token from  https://aqicn.org/data-platform/token/
+#define AQICN_TOKEN "dummy-token-for-test-purpose-only"
+
+// aqicn.org places the station on its map from these coordinates. The other
+// uploaders ask for the location once, when registering the device.
+//
+// They are also included in the MQTT and web server payloads, which do not
+// require them. Move them out of this block to keep reporting the location
+// there while uploads to aqicn.org are disabled.
 #define LATITUDE 28.7501
 #define LONGITUDE 77.1177
+#endif
 
 /*
 Sensor.Community support. Before enabling this, register the device at

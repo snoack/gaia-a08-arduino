@@ -56,8 +56,12 @@ JsonDocument getSensorDataJson()
 
     doc["station"]["id"] = stationID;
     doc["station"]["mac"] = mac;
+#ifdef LATITUDE
     doc["station"]["location"]["latitude"] = LATITUDE;
+#endif
+#ifdef LONGITUDE
     doc["station"]["location"]["longitude"] = LONGITUDE;
+#endif
     addOptionalReading(doc["readings"]["pm1"], readings.hasPm1, readings.pm1);
     addOptionalReading(doc["readings"]["pm25"], readings.hasPm25, readings.pm25);
     addOptionalReading(doc["readings"]["pm10"], readings.hasPm10, readings.pm10);

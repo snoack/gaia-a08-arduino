@@ -16,9 +16,12 @@
  *
  */
 
-#include <WiFi.h>
 #include "sensors.hpp"
 #include "main.hpp"
+#include "uploader.hpp"
+
+#ifdef ANY_UPLOADER_ENABLED
+#include <WiFi.h>
 #include <HTTPClient.h>
 
 static constexpr char SOFTWARE_VERSION[] = "GAIA-uploader/1.1";
@@ -225,7 +228,12 @@ static void uploadDataToOpenSenseMap(const SensorReadings &readings)
 }
 #endif
 
-void uploadDataToAqicn(const SensorReadings &readings)
+#ifdef CONF_AQICN
+#if !defined(LATITUDE) || !defined(LONGITUDE)
+#error "CONF_AQICN requires LATITUDE and LONGITUDE"
+#endif
+
+static void uploadDataToAqicn(const SensorReadings &readings)
 {
     if (!readings.hasPm25)
     {
@@ -262,7 +270,7 @@ void uploadDataToAqicn(const SensorReadings &readings)
         doc["readings"][5]["unit"] = "ppm";
     }
 
-    doc["token"] = TOKEN;
+    doc["token"] = AQICN_TOKEN;
 
     unsigned char jsonBody[512]; // worst-case JSON length is 505 bytes
     size_t jsonLength = serializeJson(doc, jsonBody, sizeof(jsonBody));
@@ -279,6 +287,7 @@ void uploadDataToAqicn(const SensorReadings &readings)
 
     http.end();
 }
+#endif
 
 // One minute is what the AQICN firmware traditionally uses and it is also the
 // default in openSenseMap's generated firmware code. Sensor.Community asks not
@@ -312,7 +321,10 @@ void uploaderWorker(void *params)
         }
 
         const SensorReadings readings = getSensorReadings();
+
+#ifdef CONF_AQICN
         uploadDataToAqicn(readings);
+#endif
 
 #ifdef CONF_SENSOR_COMMUNITY
         uploadPmDataToSensorCommunity(readings);
@@ -341,3 +353,4 @@ void uploaderInit()
         NULL              // Task handle
     );
 }
+#endif
