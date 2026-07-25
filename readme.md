@@ -61,6 +61,14 @@ senseBox ID, access token, and the individual sensor IDs into the corresponding
 `CONF_OPENSENSEMAP`. All sensor ID settings are optional; leave a setting
 undefined if that measurement was not registered.
 
+### Home Assistant
+
+With `CONF_MQTT` and `CONF_HOME_ASSISTANT` enabled, the device announces itself to
+[Home Assistant](https://www.home-assistant.io/) over MQTT and its sensors show
+up automatically. The RGB LED is also exposed as a light entity you can turn on
+and off, set to a color, or switch back to following the air quality via its
+**AQI** effect. The setting is remembered across reboots.
+
 ## Libraries
 
 The firmware uses the following libraries:

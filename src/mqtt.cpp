@@ -21,19 +21,44 @@
 
 #ifdef CONF_MQTT
 
+#include <algorithm>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mqtt_client.h"
+#include "indicator.hpp"
 
 esp_mqtt_client_handle_t client;
 
 // Per-node topics, keyed off the device MAC so any number of GAIA nodes can
 // coexist on the same broker without collisions. Built once in mqttInit().
-static char dataTopic[48];   // GAIA/<mac>/data    (sensor state)
-static char statusTopic[48]; // GAIA/<mac>/status  (device availability + LWT)
+static char dataTopic[48];         // GAIA/<mac>/data       (sensor state)
+static char statusTopic[48];       // GAIA/<mac>/status     (device availability + LWT)
 #ifdef CONF_HOME_ASSISTANT
+static char lightStateTopic[48];   // GAIA/<mac>/light      (light state echo)
+static char lightCommandTopic[52]; // GAIA/<mac>/light/set  (commands from HA)
+
+// The two effects Home Assistant offers for the light. "AQI" is the default
+// behavior (color follows the reading); "Solid" is a fixed color the user
+// picks. The rainbow shown at boot is internal and not exposed here.
+static constexpr char HA_EFFECT_AQI[] = "AQI";
+static constexpr char HA_EFFECT_SOLID[] = "Solid";
+
+// Fill in the availability and device blocks shared by every discovery config,
+// so all of this node's entities group under one Home Assistant device.
+static void haDevice(JsonDocument &cfg)
+{
+    cfg["avty"][0]["t"] = statusTopic;
+
+    char buf[24];
+    cfg["dev"]["ids"][0] = mac;
+    snprintf(buf, sizeof(buf), "GAIA A08 (%.4s)", mac);
+    cfg["dev"]["name"] = buf;
+    cfg["dev"]["mf"] = "AQICN";
+    cfg["dev"]["mdl"] = "A08";
+}
+
 // Publish a single Home Assistant discovery config for one reading. The state
 // topic is shared (dataTopic) and each entity extracts its own field via a
 // value_template.
@@ -65,15 +90,7 @@ static void haSensor(const char *key, const char *name, const char *devClass,
         cfg["ic"] = icon;
     }
 
-    // Device availability applies to every entity.
-    cfg["avty"][0]["t"] = statusTopic;
-
-    // Group all of this node's entities under one Home Assistant device.
-    cfg["dev"]["ids"][0] = mac;
-    snprintf(buf, sizeof(buf), "GAIA A08 (%.4s)", mac);
-    cfg["dev"]["name"] = buf;
-    cfg["dev"]["mf"] = "AQICN";
-    cfg["dev"]["mdl"] = "A08";
+    haDevice(cfg);
 
     // Layer a per-reading availability on top of the device availability above:
     // the entity is available only when the device is online (avty[0]) and this
@@ -94,6 +111,102 @@ static void haSensor(const char *key, const char *name, const char *devClass,
     char payload[576]; // worst-case json len is 495 bytes
     size_t len = serializeJson(cfg, payload, sizeof(payload));
     esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
+}
+
+// Publish the discovery config for the RGB LED as a JSON-schema light with
+// RGB color, brightness, and effect to toggle between AQI and a fixed color.
+static void haLight()
+{
+    JsonDocument cfg;
+    char buf[48];
+    cfg["name"] = "Indicator";
+    snprintf(buf, sizeof(buf), "%s_light", mac);
+    cfg["uniq_id"] = buf;
+    cfg["schema"] = "json";
+    cfg["stat_t"] = lightStateTopic;
+    cfg["cmd_t"] = lightCommandTopic;
+    cfg["sup_clrm"][0] = "rgb";
+    cfg["bri_scl"] = INDICATOR_BRIGHTNESS_LEVELS;
+    cfg["effect"] = true;
+    cfg["fx_list"][0] = HA_EFFECT_AQI;
+    cfg["fx_list"][1] = HA_EFFECT_SOLID;
+    cfg["ic"] = "mdi:led-on";
+
+    haDevice(cfg);
+
+    char topic[128];
+    snprintf(topic, sizeof(topic),
+             HOME_ASSISTANT_DISCOVERY_PREFIX "/light/%s/light/config", mac);
+
+    char payload[512];
+    size_t len = serializeJson(cfg, payload, sizeof(payload));
+    esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
+}
+
+// Echo the stored light state so Home Assistant reflects it after a command or
+// reconnect. The color reported is always the user's, never the live AQI color:
+// keeping it lets Home Assistant restore it when switching back out of AQI mode,
+// which is also why the AQI color shifting under AQI mode is not echoed here.
+static void publishLightState()
+{
+    IndicatorState state = indicatorGetState();
+    JsonDocument doc;
+    doc["state"] = state.on ? "ON" : "OFF";
+    doc["effect"] = state.mode == INDICATOR_MODE_USER ? HA_EFFECT_SOLID : HA_EFFECT_AQI;
+    doc["brightness"] = std::max(1, (state.brightness + 1) * INDICATOR_BRIGHTNESS_LEVELS /
+                                        (INDICATOR_BRIGHTNESS_MAX + 1));
+    doc["color"]["r"] = state.r;
+    doc["color"]["g"] = state.g;
+    doc["color"]["b"] = state.b;
+
+    char payload[96];
+    size_t len = serializeJson(doc, payload, sizeof(payload));
+    esp_mqtt_client_publish(client, lightStateTopic, payload, len, 1, /*retain=*/1);
+}
+
+// Apply a light command from Home Assistant. The JSON schema payload carries an
+// on/off state and, optionally, a color and an effect. Setting a color implies
+// the Solid effect; the effect field, if present, wins.
+static void handleLightCommand(const char *data, int len)
+{
+    JsonDocument doc;
+    if (deserializeJson(doc, data, len) != DeserializationError::Ok)
+    {
+        return;
+    }
+
+    IndicatorState state = indicatorGetState();
+
+    if (doc["state"].is<const char *>())
+    {
+        state.on = strcmp(doc["state"], "ON") == 0;
+    }
+    if (doc["brightness"].is<int>())
+    {
+        // Home Assistant sends 1..INDICATOR_BRIGHTNESS_LEVELS (the advertised
+        // scale); map each level to the top of its bucket in the stored range.
+        int level = constrain(doc["brightness"].as<int>(), 1, INDICATOR_BRIGHTNESS_LEVELS);
+        state.brightness =
+            (INDICATOR_BRIGHTNESS_MAX + 1) * level / INDICATOR_BRIGHTNESS_LEVELS - 1;
+    }
+    if (doc["color"]["r"].is<int>() &&
+        doc["color"]["g"].is<int>() &&
+        doc["color"]["b"].is<int>())
+    {
+        state.r = doc["color"]["r"];
+        state.g = doc["color"]["g"];
+        state.b = doc["color"]["b"];
+        state.mode = INDICATOR_MODE_USER;
+    }
+    if (doc["effect"].is<const char *>())
+    {
+        state.mode = strcmp(doc["effect"], HA_EFFECT_SOLID) == 0
+                         ? INDICATOR_MODE_USER
+                         : INDICATOR_MODE_AQI;
+    }
+
+    indicatorSetState(state);
+    publishLightState();
 }
 
 // Publish all discovery configs (retained) so Home Assistant auto-creates the
@@ -119,6 +232,7 @@ static void haPublishDiscovery()
     haSensor("main_pollutant", "Dominant Pollutant", "enum", nullptr, nullptr,
              pollutantOptions, sizeof(pollutantOptions) / sizeof(pollutantOptions[0]),
              "mdi:molecule");
+    haLight();
 }
 #endif // CONF_HOME_ASSISTANT
 
@@ -133,6 +247,10 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         // Mark the device online, then (re)announce the discovery configs.
         esp_mqtt_client_publish(client, statusTopic, "online", 0, 1, /*retain=*/1);
         haPublishDiscovery();
+        // Subscribe for light commands and publish the current state so Home
+        // Assistant shows the LED as it stands right after (re)connecting.
+        esp_mqtt_client_subscribe(client, lightCommandTopic, 1);
+        publishLightState();
 #endif
         break;
     case MQTT_EVENT_DISCONNECTED:
@@ -141,6 +259,21 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     case MQTT_EVENT_PUBLISHED:
         Serial.println("Data published to MQTT Broker");
         break;
+#ifdef CONF_HOME_ASSISTANT
+    case MQTT_EVENT_DATA:
+    {
+        esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+        // The light command is small and single-topic, so ignore anything the
+        // broker had to split across events rather than reassembling it.
+        if (event->data_len == event->total_data_len &&
+            event->topic_len == (int)strlen(lightCommandTopic) &&
+            strncmp(event->topic, lightCommandTopic, event->topic_len) == 0)
+        {
+            handleLightCommand(event->data, event->data_len);
+        }
+        break;
+    }
+#endif
     default:
         break;
     }
@@ -180,6 +313,10 @@ void mqttInit()
     // before mqttInit() is called).
     snprintf(dataTopic, sizeof(dataTopic), "GAIA/%s/data", mac);
     snprintf(statusTopic, sizeof(statusTopic), "GAIA/%s/status", mac);
+#ifdef CONF_HOME_ASSISTANT
+    snprintf(lightStateTopic, sizeof(lightStateTopic), "GAIA/%s/light", mac);
+    snprintf(lightCommandTopic, sizeof(lightCommandTopic), "GAIA/%s/light/set", mac);
+#endif
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .uri = MQTT_BROKER_URI,

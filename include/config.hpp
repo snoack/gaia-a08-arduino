@@ -87,7 +87,7 @@ https://opensensemap.org/ — see README for instructions.
 #define MQTT_USERNAME ""
 #define MQTT_PASSWORD ""
 
-// Comment to disable Home Assistant MQTT discovery so the device automatically
+// Comment to disable Home Assistant support so the device automatically
 // appears in Home Assistant (managed by its built-in MQTT integration).
 #define CONF_HOME_ASSISTANT
 
