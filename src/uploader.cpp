@@ -47,16 +47,6 @@ void UploadDataToAQIC(unsigned char *json_body, size_t request_len)
     http.end();
 }
 
-void uploaderResetCurrentStatus()
-{
-    pm10.reset();
-    pm25.reset();
-    pm1.reset();
-    temperature.reset();
-    humidity.reset();
-    co2.reset();
-}
-
 void uploaderWorker(void *params)
 {
     while (1)
@@ -74,8 +64,6 @@ void uploaderWorker(void *params)
         {
             continue;
         }
-        uploaderResetCurrentStatus();
-
         static unsigned char json_body[512]; // worst-case json len is 494 bytes
         size_t json_len = serializeJson(doc, json_body, sizeof(json_body));
 

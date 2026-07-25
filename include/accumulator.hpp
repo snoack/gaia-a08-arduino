@@ -17,209 +17,102 @@
  */
 
 #pragma once
-#include <math.h>
+#include <Arduino.h>
+#include <atomic>
 
 template <typename T>
 class Accumulator
 {
-    T *vals;
-    int count = 0;
-    int zeros = 0;
-    int len;
-    bool sorted = false;
+    // The fastest sensor produces one reading per second, so 60 slots are
+    // enough to retain every reading from the last minute.
+    static constexpr int CAPACITY = 60;
+    static constexpr unsigned long MAX_AGE = 60 * 1000;
+    // Reserve the high bit as a validity flag and use the remaining bits for
+    // rollover-safe elapsed-time comparisons.
+    static constexpr unsigned long TIMESTAMP_VALID = 1UL << 31;
+    static constexpr unsigned long TIMESTAMP_MASK = ~TIMESTAMP_VALID;
+
+    struct Sample
+    {
+        std::atomic<T> val;
+        std::atomic<unsigned long> timestamp;
+    };
+
+    Sample samples[CAPACITY];
+    int writeIndex = 0;
 
 public:
-    Accumulator(int _len = 60)
+    Accumulator()
     {
-        len = _len;
-        vals = new T[len];
-        reset();
-    }
-
-    ~Accumulator()
-    {
-        delete[] vals;
-        vals = nullptr;
-    }
-
-    void copy(Accumulator &acc)
-    {
-        reset();
-        for (int i = 0; i < acc.count; i++)
+        for (int i = 0; i < CAPACITY; i++)
         {
-            add(acc.vals[i]);
+            samples[i].timestamp.store(0, std::memory_order_relaxed);
         }
+    }
+
+    // Concurrent readers may invalidate expired timestamps, but only one task
+    // may add samples because writeIndex is not synchronized.
+    void add(T val)
+    {
+        // Seqlock: invalidate the slot while updating it; readers accept it only
+        // when they see the same valid timestamp before and after the value.
+        samples[writeIndex].timestamp.store(0);
+        samples[writeIndex].val.store(val);
+        unsigned long timestamp = millis() & TIMESTAMP_MASK;
+        samples[writeIndex].timestamp.store(timestamp | TIMESTAMP_VALID);
+        writeIndex = (writeIndex + 1) % CAPACITY;
+    }
+
+    template <typename F>
+    void readSamples(F fn)
+    {
+        unsigned long now = millis() & TIMESTAMP_MASK;
+        for (int i = 0; i < CAPACITY; i++)
+        {
+            unsigned long timestamp = samples[i].timestamp.load();
+            if (!(timestamp & TIMESTAMP_VALID))
+            {
+                continue;
+            }
+            if (((now - (timestamp & TIMESTAMP_MASK)) & TIMESTAMP_MASK) > MAX_AGE)
+            {
+                samples[i].timestamp.compare_exchange_strong(timestamp, 0);
+                continue;
+            }
+
+            T val = samples[i].val.load();
+            if (timestamp != samples[i].timestamp.load())
+            {
+                continue;
+            }
+
+            if (!fn(val))
+            {
+                return;
+            }
+        }
+    }
+
+    bool avg(float &result)
+    {
+        float t = 0;
+        int count = 0;
+        readSamples([&](T val) {
+            t += val;
+            count++;
+            return true;
+        });
+        result = count ? t / count : 0;
+        return count != 0;
     }
 
     bool hasData()
     {
-        return count != 0 || zeros > 0;
-    }
-
-    int last()
-    {
-        return vals[count ? (count - 1) : (len - 1)];
-    }
-
-    void add(T val)
-    {
-        if (count == len - 1)
-        {
-            for (int i = 0; i < len - 1; i++)
-            {
-                vals[i] = vals[i + 1];
-            }
-            count--;
-        }
-        vals[count++] = val;
-        sorted = false;
-    }
-
-    void reset()
-    {
-        count = 0;
-        zeros = 0;
-        for (int i = 0; i < len; i++)
-        {
-            vals[i] = 0;
-        }
-        sorted = false;
-    }
-
-    float stddev()
-    {
-        if (count == 0)
-            return 0;
-
-        float u = avg();
-        if (u < 0)
-            return -1;
-        float t = 0;
-        for (int i = 0; i < count; i++)
-        {
-            t += (vals[i] - u) * (vals[i] - u);
-        }
-        return sqrt(t / count);
-    }
-
-    int nOutliers()
-    {
-        int outliers = 0;
-        for (int i = 0; i < count; i++)
-        {
-            if (isOutlier(vals[i]))
-            {
-                outliers++;
-            }
-        }
-        return outliers;
-    }
-
-    bool isOutlier(float val)
-    {
-        if (val > median() + iqr() * 1.5)
-        {
-            return true;
-        }
-        else if (val < median() - iqr() * 1.5)
-        {
-            return true;
-        }
-        return false;
-    }
-
-    int median()
-    {
-        if (count == 0)
-            return 0;
-        sort();
-        return vals[count / 2];
-    }
-
-    float iqr()
-    {
-        // 7 -> Q1: 3, Q2: 1, Q3: 5
-        // 8 -> Q1: 2, Q2: 4, Q3: 6
-        // 9 -> Q1: 2, Q2: 4, Q3: 9
-        // 5 -> Q1: 2, Q2: 1, Q3: 3
-
-        //[25,30,32,36,5218,5609,4697]
-        // Q1=36, Q2=30, Q3=5609
-
-        //[25,30,32,36,5218]
-        // Q1=32, Q2=30, Q3=36
-
-        if (count == 0)
-            return 0;
-        sort();
-        float v = vals[count * 3 / 4] - vals[count / 4];
-        float mv = vals[count / 2] / 10.0;
-        if (v < mv)
-            v = mv;
-        return v;
-    }
-
-    void sort()
-    {
-        if (sorted)
-            return;
-        sorted = true;
-        for (int i = 0; i < count; i++)
-        {
-            for (int j = 0; j < i; j++)
-            {
-                if (vals[i] < vals[j])
-                {
-                    float t = vals[j];
-                    vals[j] = vals[i];
-                    vals[i] = t;
-                }
-            }
-        }
-    }
-
-    float avg()
-    {
-        if (count == 0)
-            return 0;
-
-        float t = 0;
-        for (int i = 0; i < count; i++)
-        {
-            t += vals[i];
-        }
-        return t / count;
-    }
-
-    float vmin()
-    {
-        if (count == 0)
-            return 0;
-
-        float t = vals[0];
-        for (int i = 0; i < count; i++)
-        {
-            if (t > vals[i])
-            {
-                t = vals[i];
-            }
-        }
-        return t;
-    }
-
-    float vmax()
-    {
-        if (count == 0)
-            return 0;
-
-        float t = vals[0];
-        for (int i = 0; i < count; i++)
-        {
-            if (vals[i] > t)
-            {
-                t = vals[i];
-            }
-        }
-        return t;
+        bool found = false;
+        readSamples([&](T) {
+            found = true;
+            return false;
+        });
+        return found;
     }
 };

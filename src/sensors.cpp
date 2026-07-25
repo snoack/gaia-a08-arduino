@@ -51,20 +51,16 @@ void InitializeI2C()
 
 void getMinimalSensorData(JsonDocument &doc)
 {
-    bool hasPm1 = pm1.hasData();
-    bool hasPm25 = pm25.hasData();
-    bool hasPm10 = pm10.hasData();
-    bool hasTemperature = temperature.hasData();
-    bool hasHumidity = humidity.hasData();
-    float pm1Avg = pm1.avg();
-    float pm25Avg = pm25.avg();
-    float pm10Avg = pm10.avg();
-    float temperatureAvg = temperature.avg();
-    float humidityAvg = humidity.avg();
+    float pm1Avg, pm25Avg, pm10Avg, temperatureAvg, humidityAvg, co2Avg;
+    bool hasPm1 = pm1.avg(pm1Avg);
+    bool hasPm25 = pm25.avg(pm25Avg);
+    bool hasPm10 = pm10.avg(pm10Avg);
+    bool hasTemperature = temperature.avg(temperatureAvg);
+    bool hasHumidity = humidity.avg(humidityAvg);
+    bool hasCo2 = co2.avg(co2Avg);
 
     doc["station"]["id"] = stationID;
     doc["station"]["mac"] = mac;
-
     doc["station"]["location"]["latitude"] = LATITUDE;
     doc["station"]["location"]["longitude"] = LONGITUDE;
     addOptionalReading(doc["readings"]["pm1"], hasPm1, pm1Avg);
@@ -86,18 +82,26 @@ void getMinimalSensorData(JsonDocument &doc)
         doc["readings"]["main_pollutant"] = nullptr;
     }
 
-    if (co2.hasData())
+    if (hasCo2)
     {
-        doc["readings"]["co2"] = round(co2.avg());
+        doc["readings"]["co2"] = round(co2Avg);
     }
 }
 
 bool getSerialisedSensorData(JsonDocument &doc)
 {
-    if (!pm25.hasData())
+    float pm25Avg;
+    if (!pm25.avg(pm25Avg))
     {
         return false;
     }
+
+    float pm10Avg, pm1Avg, temperatureAvg, humidityAvg, co2Avg;
+    pm10.avg(pm10Avg);
+    pm1.avg(pm1Avg);
+    temperature.avg(temperatureAvg);
+    humidity.avg(humidityAvg);
+    bool hasCo2 = co2.avg(co2Avg);
 
     doc["station"]["id"] = stationID;
     doc["station"]["mac"] = mac;
@@ -106,29 +110,29 @@ bool getSerialisedSensorData(JsonDocument &doc)
     doc["station"]["location"]["longitude"] = LONGITUDE;
 
     doc["readings"][0]["specie"] = "pm25";
-    doc["readings"][0]["value"] = pm25.avg();
+    doc["readings"][0]["value"] = pm25Avg;
     doc["readings"][0]["unit"] = "µg/m3";
 
     doc["readings"][1]["specie"] = "pm10";
-    doc["readings"][1]["value"] = pm10.avg();
+    doc["readings"][1]["value"] = pm10Avg;
     doc["readings"][1]["unit"] = "µg/m3";
 
     doc["readings"][2]["specie"] = "pm1";
-    doc["readings"][2]["value"] = pm1.avg();
+    doc["readings"][2]["value"] = pm1Avg;
     doc["readings"][2]["unit"] = "µg/m3";
 
     doc["readings"][3]["specie"] = "temperature";
-    doc["readings"][3]["value"] = temperature.avg();
+    doc["readings"][3]["value"] = temperatureAvg;
     doc["readings"][3]["unit"] = "C";
 
     doc["readings"][4]["specie"] = "humidity";
-    doc["readings"][4]["value"] = humidity.avg();
+    doc["readings"][4]["value"] = humidityAvg;
     doc["readings"][4]["unit"] = "%";
 
-    if (co2.hasData())
+    if (hasCo2)
     {
         doc["readings"][5]["specie"] = "co2";
-        doc["readings"][5]["value"] = round(co2.avg());
+        doc["readings"][5]["value"] = round(co2Avg);
         doc["readings"][5]["unit"] = "ppm";
     }
 
