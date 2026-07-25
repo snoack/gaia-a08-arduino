@@ -43,6 +43,8 @@ void webServerInit()
 
 void webServerHandle()
 {
+    // With WiFiManager this may run before webServerInit();
+    // handleClient() is safe before the server has begun listening.
     server.handleClient();
 }
 

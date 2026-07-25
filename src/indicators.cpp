@@ -106,9 +106,9 @@ static void applyState(const IndicatorState &state, uint32_t aqiColor)
     lastAqiColor = aqiColor;
 }
 
-// Runs in its own task rather than from loop(), which does not start until
-// setup() returns; setup() blocks for seconds in wifiInit(), and the strip
-// would otherwise sit unserviced (no boot rainbow) until then.
+// Keep the LED animation independent of setup() and loop(). setup() performs
+// synchronous initialization after starting this task, including WiFiManager's
+// saved-credential attempt, and loop() has exceptional blocking operations.
 static void ledWorker(void *parameter)
 {
     while (1)

@@ -20,6 +20,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include "main.hpp"
+#include "network.hpp"
 
 #ifdef CONF_USE_WIFI_MANAGER
 #include <WiFiManager.h>
@@ -80,7 +81,7 @@ static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
     }
 }
 
-void wifiReconnect()
+static void wifiReconnect()
 {
     if (!reconnectPending.load(std::memory_order_relaxed) ||
         millis() - lastAttemptAt.load(std::memory_order_relaxed) < RECONNECT_DELAY)
@@ -109,21 +110,47 @@ void wifiInit()
     WiFi.onEvent(onWiFiEvent);
 
 #ifdef CONF_USE_WIFI_MANAGER
+    wifiManager.setConfigPortalBlocking(false);
     wifiManager.autoConnect("GAIA-A08");
-
 #else
     WiFi.begin(WIFI_SSID, WIFI_PASS);
+#endif
+}
 
-    while (WiFi.status() != WL_CONNECTED)
+void wifiHandle()
+{
+#ifdef CONF_USE_WIFI_MANAGER
+    wifiManager.process();
+
+    // WiFiManager owns connection attempts and port 80 while its portal is
+    // active; defer our network services so they do not interfere.
+    if (wifiManager.getConfigPortalActive())
     {
-        // Check for the connection
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        Serial.println("Trying to connecting to WiFi..");
+        return;
+    }
+
+#ifdef CONF_USE_WEB_SERVER
+    // WiFiManager's configuration portal also listens on port 80. Defer our
+    // web server until Wi-Fi is connected and the portal has shut down.
+    static bool webServerInitialized = false;
+    if (!webServerInitialized && WiFi.status() == WL_CONNECTED)
+    {
+        webServerInit();
+        webServerInitialized = true;
+    }
+#endif
+#endif
+
+#ifdef OTA_PASSWORD
+    // OTA initialization is ineffective before the network interface is up,
+    // but once initialized it survives later reconnects.
+    static bool otaInitialized = false;
+    if (!otaInitialized && WiFi.status() == WL_CONNECTED)
+    {
+        otaInit();
+        otaInitialized = true;
     }
 #endif
 
-    Serial.print("Connected to the WiFi network with IP address: ");
-
-    IPAddress ip = WiFi.localIP();
-    Serial.println(ip);
+    wifiReconnect();
 }

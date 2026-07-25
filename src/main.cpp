@@ -60,23 +60,20 @@ void setup()
 #endif
 
     wifiInit();
-#ifdef OTA_PASSWORD
-    otaInit();
-#endif
 #ifdef CONF_MQTT
     mqttInit();
 #endif
-#ifdef CONF_USE_WEB_SERVER
+#if defined(CONF_USE_WEB_SERVER) && !defined(CONF_USE_WIFI_MANAGER)
     webServerInit();
 #endif
 }
 
-// Only non-blocking work belongs here: the short delay below sets
-// the polling cadence for everything in this loop, so anything that
-// blocks would stall it. Blocking work runs in its own task instead.
+// Only short, cooperative polling work belongs here; anything that routinely
+// blocks should run in its own task. WiFiManager applying submitted credentials
+// and an active OTA transfer are exceptional synchronous operations.
 void loop()
 {
-    wifiReconnect();
+    wifiHandle();
 #ifdef CONF_USE_WEB_SERVER
     webServerHandle();
 #endif
