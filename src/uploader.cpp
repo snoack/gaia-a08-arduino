@@ -47,11 +47,23 @@ void UploadDataToAQIC(unsigned char *json_body, size_t request_len)
     http.end();
 }
 
+// One minute is what the AQICN firmware traditionally uses.
+static constexpr TickType_t UPLOAD_INTERVAL = pdMS_TO_TICKS(60 * 1000);
+
 void uploaderWorker(void *params)
 {
+    const TickType_t startedAt = xTaskGetTickCount();
+
     while (1)
     {
-        vTaskDelay(60 * 1000 / portTICK_PERIOD_MS);
+        // Sleep until the next interval boundary. Deriving the delay from the
+        // elapsed time keeps the uploads aligned to the interval without
+        // accumulating drift, and a cycle that overruns simply misses
+        // boundaries instead of queueing up requests to catch up, which would
+        // exceed the rate the server expects.
+        TickType_t elapsed = xTaskGetTickCount() - startedAt;
+        vTaskDelay(UPLOAD_INTERVAL - elapsed % UPLOAD_INTERVAL);
+
         // Check WiFi connection status
         if (WiFi.status() != WL_CONNECTED)
         {
