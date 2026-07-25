@@ -40,6 +40,25 @@ https://devices.sensor.community/ — see README for instructions.
 */
 // #define CONF_SENSOR_COMMUNITY
 
+/*
+openSenseMap support. Register the device and its measurements at
+https://opensensemap.org/ — see README for instructions.
+*/
+// #define CONF_OPENSENSEMAP
+
+#ifdef CONF_OPENSENSEMAP
+#define OPENSENSEMAP_BOX_ID "your-sensebox-id"
+#define OPENSENSEMAP_ACCESS_TOKEN "your-sensebox-access-token"
+
+// Define only the measurements registered for this senseBox.
+// #define OPENSENSEMAP_PM1_SENSOR_ID "your-pm1-sensor-id"
+// #define OPENSENSEMAP_PM25_SENSOR_ID "your-pm25-sensor-id"
+// #define OPENSENSEMAP_PM10_SENSOR_ID "your-pm10-sensor-id"
+// #define OPENSENSEMAP_TEMPERATURE_SENSOR_ID "your-temperature-sensor-id"
+// #define OPENSENSEMAP_HUMIDITY_SENSOR_ID "your-humidity-sensor-id"
+// #define OPENSENSEMAP_CO2_SENSOR_ID "your-co2-sensor-id"
+#endif
+
 #ifndef CONF_USE_WIFI_MANAGER
 // Only needed if the WiFi manager is not used
 #define WIFI_SSID "yourNetworkName"

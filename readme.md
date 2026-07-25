@@ -48,6 +48,16 @@ device fields as follows:
 
 Finally, enable `CONF_SENSOR_COMMUNITY` in `include/config.hpp`.
 
+### openSenseMap
+
+Optionally, the firmware can publish measurements to
+[openSenseMap](https://opensensemap.org/). Create an account, register a new
+senseBox, and add a sensor for every measurement you want to publish. Copy the
+senseBox ID, access token, and the individual sensor IDs into the corresponding
+`OPENSENSEMAP_*` settings in `include/config.hpp`, then enable
+`CONF_OPENSENSEMAP`. All sensor ID settings are optional; leave a setting
+undefined if that measurement was not registered.
+
 ## Libraries
 
 The firmware uses the following libraries:

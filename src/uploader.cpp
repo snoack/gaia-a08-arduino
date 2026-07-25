@@ -141,6 +141,90 @@ static void uploadCo2DataToSensorCommunity(const SensorReadings &readings)
 }
 #endif
 
+#ifdef CONF_OPENSENSEMAP
+static void uploadDataToOpenSenseMap(const SensorReadings &readings)
+{
+    JsonDocument doc;
+    JsonArray measurements = doc.to<JsonArray>();
+
+#ifdef OPENSENSEMAP_PM1_SENSOR_ID
+    if (readings.hasPm1)
+    {
+        JsonObject measurement = measurements.add<JsonObject>();
+        measurement["sensor"] = OPENSENSEMAP_PM1_SENSOR_ID;
+        measurement["value"] = readings.pm1;
+    }
+#endif
+#ifdef OPENSENSEMAP_PM25_SENSOR_ID
+    if (readings.hasPm25)
+    {
+        JsonObject measurement = measurements.add<JsonObject>();
+        measurement["sensor"] = OPENSENSEMAP_PM25_SENSOR_ID;
+        measurement["value"] = readings.pm25;
+    }
+#endif
+#ifdef OPENSENSEMAP_PM10_SENSOR_ID
+    if (readings.hasPm10)
+    {
+        JsonObject measurement = measurements.add<JsonObject>();
+        measurement["sensor"] = OPENSENSEMAP_PM10_SENSOR_ID;
+        measurement["value"] = readings.pm10;
+    }
+#endif
+#ifdef OPENSENSEMAP_TEMPERATURE_SENSOR_ID
+    if (readings.hasTemperature)
+    {
+        JsonObject measurement = measurements.add<JsonObject>();
+        measurement["sensor"] = OPENSENSEMAP_TEMPERATURE_SENSOR_ID;
+        measurement["value"] = readings.temperature;
+    }
+#endif
+#ifdef OPENSENSEMAP_HUMIDITY_SENSOR_ID
+    if (readings.hasHumidity)
+    {
+        JsonObject measurement = measurements.add<JsonObject>();
+        measurement["sensor"] = OPENSENSEMAP_HUMIDITY_SENSOR_ID;
+        measurement["value"] = readings.humidity;
+    }
+#endif
+#ifdef OPENSENSEMAP_CO2_SENSOR_ID
+    if (readings.hasCo2)
+    {
+        JsonObject measurement = measurements.add<JsonObject>();
+        measurement["sensor"] = OPENSENSEMAP_CO2_SENSOR_ID;
+        measurement["value"] = readings.co2;
+    }
+#endif
+
+    if (measurements.size() == 0)
+    {
+        Serial.println("Skipping openSenseMap upload: no data available");
+        return;
+    }
+
+    unsigned char body[448]; // worst-case json len is 339 bytes
+    size_t bodyLength = serializeJson(doc, body, sizeof(body));
+
+    char url[96];
+    snprintf(
+        url,
+        sizeof(url),
+        "https://ingress.opensensemap.org/boxes/%s/data",
+        OPENSENSEMAP_BOX_ID);
+
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", OPENSENSEMAP_ACCESS_TOKEN);
+
+    int httpResponseCode = http.POST(body, bodyLength);
+    Serial.println("openSenseMap upload:");
+    logHttpResponse(http, httpResponseCode);
+
+    http.end();
+}
+#endif
+
 void uploadDataToAqicn(const SensorReadings &readings)
 {
     if (!readings.hasPm25)
@@ -196,11 +280,13 @@ void uploadDataToAqicn(const SensorReadings &readings)
     http.end();
 }
 
-// One minute is what the AQICN firmware traditionally uses. Sensor.Community
-// asks not to send more than once per minute, while requiring data to be sent
-// at least every 5 minutes to show as online on their map, with their own
-// firmware sending every 145s. Uploading once a minute therefore satisfies both
-// of them, and keeps a single schedule for every uploader.
+// One minute is what the AQICN firmware traditionally uses and it is also the
+// default in openSenseMap's generated firmware code. Sensor.Community asks not
+// to send more than once per minute, while requiring data to be sent at least
+// every 5 minutes to show as online on their map, with their own firmware
+// sending every 145s. Uploading once a minute therefore satisfies all of them,
+// and keeps a single schedule for every uploader.
+// https://github.com/sensebox/node-sketch-templater/blob/master/templates/homev2_ethernet.tpl
 // https://forum.sensor.community/t/how-often-should-i-send-data-to-https-api-sensor-community-v1-push-sensor-data/785
 static constexpr TickType_t UPLOAD_INTERVAL = pdMS_TO_TICKS(60 * 1000);
 
@@ -236,6 +322,10 @@ void uploaderWorker(void *params)
         {
             uploadCo2DataToSensorCommunity(readings);
         }
+#endif
+
+#ifdef CONF_OPENSENSEMAP
+        uploadDataToOpenSenseMap(readings);
 #endif
     }
 }
