@@ -63,10 +63,6 @@ static std::atomic<bool> repaintPending{false};
 // color from before the LED was set by hand.
 static uint32_t lastAqiColor = UINT32_MAX;
 
-// A latch rather than a comparison against millis(), which wraps roughly every
-// 50 days and would otherwise bring the animation back.
-static bool withinBootWindow = true;
-
 // WS2812FX brightness: 0 means no scaling (bright!), 1-2 are essentially off,
 // so 3 is the lowest perceivable level; 10 was the max the original firmware
 // used, so it is known safe. These bounds define how many distinct levels the
@@ -90,7 +86,7 @@ static void applyState(const IndicatorState &state, uint32_t aqiColor)
         (uint32_t)state.brightness *
         (WS2812FX_BRIGHTNESS_MAX - WS2812FX_BRIGHTNESS_MIN) / INDICATOR_BRIGHTNESS_MAX;
 
-    if (state.mode == INDICATOR_MODE_AQI && withinBootWindow)
+    if (state.mode == INDICATOR_MODE_AQI && aqiColor == UINT32_MAX)
     {
         // setMode() restarts the animation, so only enter it once.
         if (ws2812fx.getMode() != FX_MODE_RAINBOW_CYCLE)
@@ -127,12 +123,6 @@ static void ledWorker(void *parameter)
 {
     while (1)
     {
-        if (withinBootWindow && millis() >= 8000)
-        {
-            withinBootWindow = false;
-            repaintPending.store(true, std::memory_order_relaxed);
-        }
-
         IndicatorState state = indicatorState.load(std::memory_order_relaxed);
         uint32_t aqiColor = reportedAqiColor.load(std::memory_order_relaxed);
 
