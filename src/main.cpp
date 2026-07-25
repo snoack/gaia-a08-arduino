@@ -60,6 +60,9 @@ void setup()
 #endif
 
     wifiInit();
+#ifdef OTA_PASSWORD
+    otaInit();
+#endif
 #ifdef CONF_MQTT
     mqttInit();
 #endif
@@ -70,6 +73,8 @@ void setup()
 
 void loop()
 {
-    // Everything runs in its own task, so just idle here to keep CPU load down.
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+#ifdef OTA_PASSWORD
+    otaHandle();
+#endif
+    vTaskDelay(pdMS_TO_TICKS(100));
 }

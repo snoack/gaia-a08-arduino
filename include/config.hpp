@@ -78,6 +78,13 @@ https://opensensemap.org/ — see README for instructions.
 #define WIFI_PASS "yourNetworkPassword"
 #endif
 
+/*
+Define a nonempty password to enable authenticated over-the-air firmware
+updates. The first OTA-enabled firmware must be flashed over USB; subsequent
+builds can be uploaded over WiFi with PlatformIO's release-ota environment.
+*/
+// #define OTA_PASSWORD "replace-with-a-strong-password"
+
 // Comment to disable MQTT support in code
 #define CONF_MQTT
 

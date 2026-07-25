@@ -82,6 +82,7 @@ The firmware uses the following libraries:
 | kitesurfer1404/WS2812FX          | ^1.4.4  | RGB Led driver            |
 | ESP32Async/ESPAsyncWebServer     | ^3.7.0  |                           |
 | github.com/tzapu/WiFiManager.git | 2.0.17  |                           |
+| ArduinoOTA                       | 2.0.0   | ESP32 framework built-in; optional OTA updates |
 
 ## Compilation
 
@@ -90,6 +91,25 @@ The firmware uses the following libraries:
 If you use platform IO, you can just use `make compile-platformio` to compile,
 upload, and start the monitor. Note that, by default, the `CONF_USE_WEB_SERVER`
 configuration flag is enabled by default for Platform IO.
+
+### Over-the-air updates
+
+To enable authenticated OTA updates, define a password in `include/config.hpp`
+and replace theplaceholder:
+
+```C
+#define OTA_PASSWORD "replace-with-a-strong-password"
+```
+
+The first OTA-enabled firmware must be installed over USB with the normal
+`release` environment. Once that firmware is running and connected to Wi-Fi,
+subsequent builds can be uploaded over the network:
+
+```sh
+pio run -e release-ota -t upload --upload-port GAIA-A08-xxxx.local
+```
+
+If mDNS name resolution is unavailable, use the device's IP address instead.
 
 ### Arduino CLI/IDE
 
