@@ -29,6 +29,64 @@
 
 esp_mqtt_client_handle_t client;
 
+// Per-node topics, keyed off the device MAC so any number of GAIA nodes can
+// coexist on the same broker without collisions. Built once in mqttInit().
+static char dataTopic[48];      // GAIA/<mac>/data          (sensor state)
+static char statusTopic[48];    // GAIA/<mac>/status        (device availability + LWT)
+#ifdef CONF_HOME_ASSISTANT
+// Publish a single Home Assistant discovery config for one reading. The state
+// topic is shared (dataTopic) and each entity extracts its own field via a
+// value_template.
+static void haSensor(const char *key, const char *name, const char *devClass,
+                     const char *unit)
+{
+    JsonDocument cfg;
+    char buf[48]; // worst-case value len is 37 chars (val_tpl)
+    cfg["name"] = name;
+    snprintf(buf, sizeof(buf), "%s_%s", mac, key);
+    cfg["uniq_id"] = buf;
+    cfg["stat_t"] = dataTopic;
+    snprintf(buf, sizeof(buf), "{{ value_json.readings.%s }}", key);
+    cfg["val_tpl"] = buf;
+    cfg["dev_cla"] = devClass;
+    cfg["unit_of_meas"] = unit;
+    cfg["stat_cla"] = "measurement";
+
+    // Device availability applies to every entity.
+    cfg["avty"][0]["t"] = statusTopic;
+
+    // Group all of this node's entities under one Home Assistant device.
+    cfg["dev"]["ids"][0] = mac;
+    snprintf(buf, sizeof(buf), "GAIA A08 (%.4s)", mac);
+    cfg["dev"]["name"] = buf;
+    cfg["dev"]["mf"] = "AQICN";
+    cfg["dev"]["mdl"] = "A08";
+
+    char topic[128];
+    snprintf(topic, sizeof(topic),
+             HOME_ASSISTANT_DISCOVERY_PREFIX "/sensor/%s/%s/config", mac, key);
+
+    char payload[512]; // worst-case json len is 352 bytes
+    size_t len = serializeJson(cfg, payload, sizeof(payload));
+    esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
+}
+
+// Publish all discovery configs (retained) so Home Assistant auto-creates the
+// entities. Called on every (re)connect to re-announce after reconnects.
+static void haPublishDiscovery()
+{
+    haSensor("pm1", "PM1", "pm1", "µg/m³");
+    haSensor("pm25", "PM2.5", "pm25", "µg/m³");
+    haSensor("pm10", "PM10", "pm10", "µg/m³");
+    haSensor("temperature", "Temperature", "temperature", "°C");
+    haSensor("humidity", "Humidity", "humidity", "%");
+    if (co2.hasData())
+    {
+        haSensor("co2", "CO2", "carbon_dioxide", "ppm");
+    }
+}
+#endif // CONF_HOME_ASSISTANT
+
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     // esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
@@ -36,6 +94,11 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     {
     case MQTT_EVENT_CONNECTED:
         Serial.println("Connected to MQTT Broker!");
+#ifdef CONF_HOME_ASSISTANT
+        // Mark the device online, then (re)announce the discovery configs.
+        esp_mqtt_client_publish(client, statusTopic, "online", 0, 1, /*retain=*/1);
+        haPublishDiscovery();
+#endif
         break;
     case MQTT_EVENT_DISCONNECTED:
         Serial.println("Disconnected from MQTT Broker.");
@@ -72,7 +135,9 @@ void mqttWorker(void *params)
 
         // Serial.printf("Posting: %s with len %d \n", json_body, json_len);
 
-        if (esp_mqtt_client_publish(client, "GAIA/data", (char *)json_body, json_len, 1, 0) == -1)
+        // Retain the state so Home Assistant repopulates entities immediately
+        // after a restart instead of waiting for the next publish.
+        if (esp_mqtt_client_publish(client, dataTopic, (char *)json_body, json_len, 1, /*retain=*/1) == -1)
         {
             Serial.println("Failed to publish data to MQTT Broker");
         }
@@ -81,6 +146,11 @@ void mqttWorker(void *params)
 
 void mqttInit()
 {
+    // Build the per-node topics from the device MAC (populated by getStationId()
+    // before mqttInit() is called).
+    snprintf(dataTopic, sizeof(dataTopic), "GAIA/%s/data", mac);
+    snprintf(statusTopic, sizeof(statusTopic), "GAIA/%s/status", mac);
+
     esp_mqtt_client_config_t mqtt_cfg = {
         .uri = MQTT_BROKER_URI,
         .port = MQTT_PORT,
@@ -93,6 +163,15 @@ void mqttInit()
         Serial.println("Can not start the MQTT client: MQTT_BROKER_URI is not defined");
         return;
     }
+
+#ifdef CONF_HOME_ASSISTANT
+    // Last Will: if the device drops off the network, the broker publishes
+    // "offline" to the status topic and Home Assistant greys out the device.
+    mqtt_cfg.lwt_topic = statusTopic;
+    mqtt_cfg.lwt_msg = "offline";
+    mqtt_cfg.lwt_qos = 1;
+    mqtt_cfg.lwt_retain = 1;
+#endif
 
     esp_err_t err;
     client = esp_mqtt_client_init(&mqtt_cfg);
