@@ -152,9 +152,8 @@ void mqttWorker(void *params)
         {
             continue;
         }
-        size_t json_len = measureJson(doc);
         static unsigned char json_body[320]; // worst-case json len is 280 bytes
-        serializeJson(doc, json_body, sizeof(json_body));
+        size_t json_len = serializeJson(doc, json_body, sizeof(json_body));
 
         // Serial.printf("Posting: %s with len %d \n", json_body, json_len);
 
