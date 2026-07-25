@@ -5,6 +5,6 @@ extern void rgbLedInit();
 extern void rgbLedLoop();
 extern void ledInit();
 
-extern void indicatorReportPm25(float pm25);
+extern void indicatorReportAqi(float pm25, float pm10);
 
 #endif

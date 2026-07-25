@@ -21,21 +21,23 @@
 #include "main.hpp"
 #include "sensors.hpp"
 #include "indicator.hpp"
+#include "aqi.hpp"
 
 WS2812FX ws2812fx = WS2812FX(RGB_LED_COUNT, GPIO_RGB_LED, NEO_GRB + NEO_KHZ800);
 
 void rgbLedWorker(void *parameter);
 
-const uint32_t aqi_colors[6] = {
-    0x00ff00, // Green
-    0xffff00, // Yellow
-    0xff8000, // Orange
-    0xff4000, // Dark orange
-    0xff0000, // Red
-    0xcc00ff  // Purple
+// One color per AQI category, indexed by AqiCategory.
+const uint32_t aqi_colors[] = {
+    0x00ff00, // AQI_GOOD                 Green
+    0xffff00, // AQI_MODERATE             Yellow
+    0xff8000, // AQI_UNHEALTHY_SENSITIVE  Orange
+    0xff4000, // AQI_UNHEALTHY            Dark orange
+    0xff0000, // AQI_VERY_UNHEALTHY       Red
+    0xcc00ff  // AQI_HAZARDOUS            Purple
 };
-
-uint32_t pm25_concentration_to_color(float c);
+static_assert(sizeof(aqi_colors) / sizeof(aqi_colors[0]) == AQI_CATEGORY_COUNT,
+              "aqi_colors must have one entry per AQI category");
 
 void rgbLedInit()
 {
@@ -113,32 +115,16 @@ void rgbLedWorker(void *parameter)
     vTaskDelete(NULL);
 }
 
-void indicatorReportPm25(float pm25)
+// Drive the RGB LED from the same combined AQI signal (max of the PM2.5 and
+// PM10 sub-indices) that is published to Home Assistant and the web server, so
+// the indicator, the app, and aqicn.org all agree.
+void indicatorReportAqi(float pm25, float pm10)
 {
     if (rgb_is_rainbow_mode)
     {
         return;
     }
-    uint32_t color = pm25_concentration_to_color(pm25);
+    uint32_t color = aqi_colors[aqiCategory(computeAqi(pm25, pm10).aqi)];
     ws2812fx.setBrightness(10);
     ws2812fx.setColor(color);
-}
-
-uint32_t pm25_concentration_to_color(float c)
-{
-    switch (static_cast<int>(c))
-    {
-    case 0 ... 12:
-        return aqi_colors[0];
-    case 13 ... 35:
-        return aqi_colors[1];
-    case 36 ... 55:
-        return aqi_colors[2];
-    case 56 ... 150:
-        return aqi_colors[3];
-    case 151 ... 250:
-        return aqi_colors[4];
-    default:
-        return aqi_colors[5];
-    }
 }

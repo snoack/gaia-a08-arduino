@@ -18,6 +18,7 @@
 
 #include "sensors.hpp"
 #include "main.hpp"
+#include "aqi.hpp"
 #include <Wire.h>
 
 bool i2c_initialized = false;
@@ -49,6 +50,11 @@ bool getMinimalSensorData(JsonDocument &doc)
     doc["readings"]["pm10"] = pm10.avg();
     doc["readings"]["temperature"] = temperature.avg();
     doc["readings"]["humidity"] = humidity.avg();
+
+    // aqicn.org Instant AQI (InstantCast) from the averaged PM concentrations.
+    AqiResult aqi = computeAqi(pm25.avg(), pm10.avg());
+    doc["readings"]["aqi"] = aqi.aqi;
+    doc["readings"]["main_pollutant"] = aqi.pollutant;
 
     if (co2.hasData())
     {

@@ -105,7 +105,7 @@ void pmsSensorWorker(void *parameters)
             if (pms->readUntil(pms_data, 100))
             {
                 dumpSensorData(current_pms, pms_data);
-                indicatorReportPm25(pms_data.PM_AE_UG_2_5);
+                indicatorReportAqi(pms_data.PM_AE_UG_2_5, pms_data.PM_AE_UG_10_0);
                 if (millis() / 1000 > start + wait_time)
                 {
                     processSensorData(current_pms, pms_data);
@@ -125,7 +125,7 @@ void pmsSensorWorker(void *parameters)
         if (pms1.readUntil(pms1_data, 100))
         {
             dumpSensorData(0, pms1_data);
-            indicatorReportPm25(pms1_data.PM_AE_UG_2_5);
+            indicatorReportAqi(pms1_data.PM_AE_UG_2_5, pms1_data.PM_AE_UG_10_0);
             processSensorData(0, pms1_data);
         }
         vTaskDelay(1000 / portTICK_PERIOD_MS);
