@@ -51,10 +51,9 @@ void setup()
 
     getStationId();
 
+    ledInit();
     metSensorInit();
     pmsSensorInit();
-    rgbLedInit();
-    ledInit();
     scd4xSensorInit();
 #ifdef ANY_UPLOADER_ENABLED
     uploaderInit();
@@ -71,5 +70,6 @@ void setup()
 
 void loop()
 {
-    rgbLedLoop();
+    // Everything runs in its own task, so just idle here to keep CPU load down.
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
 }

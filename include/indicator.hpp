@@ -33,9 +33,6 @@ struct alignas(uint32_t) IndicatorState
 static_assert(sizeof(IndicatorState) == sizeof(uint32_t),
               "IndicatorState must fit a word to be published atomically");
 
-extern void rgbLedInit();
-extern void rgbLedLoop();
-
 // The number of distinct brightness levels the LED can actually render,
 // and so the brightness_scale advertised to Home Assistant.
 static constexpr uint8_t INDICATOR_BRIGHTNESS_LEVELS = 8;
@@ -46,7 +43,7 @@ extern void indicatorReportAqi(float pm25, float pm10);
 
 // Apply a new state and persist it. Must be called from a single task only:
 // the NVS write below is not reentrant (if this ever needs more than one
-// caller, move the write into rgbLedLoop() so there is a single writer).
+// caller, move the write into the rgbLedWorker task so there is a single writer).
 extern void indicatorSetState(const IndicatorState &state);
 extern IndicatorState indicatorGetState();
 

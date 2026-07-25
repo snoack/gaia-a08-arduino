@@ -45,8 +45,8 @@ static constexpr char PREF_NAMESPACE[] = "gaia";
 static constexpr char PREF_LIGHT_KEY[] = "light";
 
 // WS2812FX drives the strip synchronously from whichever task calls it, so
-// only rgbLedLoop() touches the LED. The tasks that set the state below and
-// report AQI colors leave the painting to it.
+// only the rgbLedWorker task touches the LED. The tasks that set the state
+// below and report AQI colors leave the painting to it.
 static std::atomic<IndicatorState> indicatorState{IndicatorState{
     .r = 0,
     .g = 0,
@@ -121,27 +121,34 @@ static void applyState(const IndicatorState &state, uint32_t aqiColor)
     }
 }
 
-void rgbLedInit()
+// Runs in its own task rather than from loop(), which does not start until
+// setup() returns; setup() blocks for seconds in wifiInit(), and the strip
+// would otherwise sit unserviced (no boot rainbow) until then.
+static void rgbLedWorker(void *parameter)
 {
-    // Load before touching the LED: a device that was turned off must not
-    // flash on the way to finding that out.
-    if (preferences.begin(PREF_NAMESPACE, /*readOnly=*/true))
+    while (1)
     {
-        // A blob of another size, from an older firmware, would be copied in
-        // as-is and leave the rest of the struct uninitialized.
-        IndicatorState stored = {};
-        if (preferences.getBytes(PREF_LIGHT_KEY, &stored, sizeof(stored)) == sizeof(stored))
+        if (withinBootWindow && millis() >= 8000)
         {
-            indicatorState.store(stored, std::memory_order_relaxed);
+            withinBootWindow = false;
+            repaintPending.store(true, std::memory_order_relaxed);
         }
-        preferences.end();
+
+        IndicatorState state = indicatorState.load(std::memory_order_relaxed);
+        uint32_t aqiColor = reportedAqiColor.load(std::memory_order_relaxed);
+
+        if (repaintPending.exchange(false, std::memory_order_relaxed) ||
+            (state.mode == INDICATOR_MODE_AQI && aqiColor != lastAqiColor))
+        {
+            applyState(state, aqiColor);
+            lastAqiColor = aqiColor;
+        }
+
+        ws2812fx.service();
+        // Short delay so the boot rainbow animates smoothly; service()
+        // self-throttles internally, so this only bounds how often it is polled.
+        vTaskDelay(5 / portTICK_PERIOD_MS);
     }
-
-    ws2812fx.init();
-    ws2812fx.setSpeed(500);
-
-    applyState(indicatorState.load(std::memory_order_relaxed),
-               reportedAqiColor.load(std::memory_order_relaxed));
 }
 
 void indicatorSetState(const IndicatorState &state)
@@ -190,27 +197,35 @@ void ledInit()
         3,         // Task priority - medium
         NULL       // Task handle
     );
-}
 
-void rgbLedLoop()
-{
-    if (withinBootWindow && millis() >= 8000)
+    // Load before touching the LED: a device that was turned off must not
+    // flash on the way to finding that out.
+    if (preferences.begin(PREF_NAMESPACE, /*readOnly=*/true))
     {
-        withinBootWindow = false;
-        repaintPending.store(true, std::memory_order_relaxed);
+        // A blob of another size, from an older firmware, would be copied in
+        // as-is and leave the rest of the struct uninitialized.
+        IndicatorState stored = {};
+        if (preferences.getBytes(PREF_LIGHT_KEY, &stored, sizeof(stored)) == sizeof(stored))
+        {
+            indicatorState.store(stored, std::memory_order_relaxed);
+        }
+        preferences.end();
     }
 
-    IndicatorState state = indicatorState.load(std::memory_order_relaxed);
-    uint32_t aqiColor = reportedAqiColor.load(std::memory_order_relaxed);
+    ws2812fx.init();
+    ws2812fx.setSpeed(500);
 
-    if (repaintPending.exchange(false, std::memory_order_relaxed) ||
-        (state.mode == INDICATOR_MODE_AQI && aqiColor != lastAqiColor))
-    {
-        applyState(state, aqiColor);
-        lastAqiColor = aqiColor;
-    }
+    applyState(indicatorState.load(std::memory_order_relaxed),
+               reportedAqiColor.load(std::memory_order_relaxed));
 
-    ws2812fx.service();
+    xTaskCreate(
+        rgbLedWorker,   // Function that should be called
+        "rgbLedWorker", // Name of the task (for debugging)
+        2048,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        3,              // Task priority - medium
+        NULL            // Task handle
+    );
 }
 
 // Drive the RGB LED from the same combined AQI signal (max of the PM2.5 and
