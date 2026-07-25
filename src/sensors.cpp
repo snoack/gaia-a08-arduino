@@ -51,13 +51,12 @@ void InitializeI2C()
 
 void getMinimalSensorData(JsonDocument &doc)
 {
-    float pm1Avg, pm25Avg, pm10Avg, temperatureAvg, humidityAvg, co2Avg;
+    float pm1Avg, pm25Avg, pm10Avg, temperatureAvg, humidityAvg;
     bool hasPm1 = pm1.avg(pm1Avg);
     bool hasPm25 = pm25.avg(pm25Avg);
     bool hasPm10 = pm10.avg(pm10Avg);
     bool hasTemperature = temperature.avg(temperatureAvg);
     bool hasHumidity = humidity.avg(humidityAvg);
-    bool hasCo2 = co2.avg(co2Avg);
 
     doc["station"]["id"] = stationID;
     doc["station"]["mac"] = mac;
@@ -82,9 +81,11 @@ void getMinimalSensorData(JsonDocument &doc)
         doc["readings"]["main_pollutant"] = nullptr;
     }
 
-    if (hasCo2)
+    if (co2SensorAvailable())
     {
-        doc["readings"]["co2"] = round(co2Avg);
+        float co2Avg;
+        bool hasCo2 = co2.avg(co2Avg);
+        addOptionalReading(doc["readings"]["co2"], hasCo2, round(co2Avg));
     }
 }
 

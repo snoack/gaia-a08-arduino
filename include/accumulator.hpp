@@ -63,9 +63,10 @@ public:
         writeIndex = (writeIndex + 1) % CAPACITY;
     }
 
-    template <typename F>
-    void readSamples(F fn)
+    bool avg(float &result)
     {
+        float t = 0;
+        int count = 0;
         unsigned long now = millis() & TIMESTAMP_MASK;
         for (int i = 0; i < CAPACITY; i++)
         {
@@ -86,33 +87,10 @@ public:
                 continue;
             }
 
-            if (!fn(val))
-            {
-                return;
-            }
-        }
-    }
-
-    bool avg(float &result)
-    {
-        float t = 0;
-        int count = 0;
-        readSamples([&](T val) {
             t += val;
             count++;
-            return true;
-        });
+        }
         result = count ? t / count : 0;
         return count != 0;
-    }
-
-    bool hasData()
-    {
-        bool found = false;
-        readSamples([&](T) {
-            found = true;
-            return false;
-        });
-        return found;
     }
 };

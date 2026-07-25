@@ -31,8 +31,8 @@ esp_mqtt_client_handle_t client;
 
 // Per-node topics, keyed off the device MAC so any number of GAIA nodes can
 // coexist on the same broker without collisions. Built once in mqttInit().
-static char dataTopic[48];      // GAIA/<mac>/data          (sensor state)
-static char statusTopic[48];    // GAIA/<mac>/status        (device availability + LWT)
+static char dataTopic[48];   // GAIA/<mac>/data    (sensor state)
+static char statusTopic[48]; // GAIA/<mac>/status  (device availability + LWT)
 #ifdef CONF_HOME_ASSISTANT
 // Publish a single Home Assistant discovery config for one reading. The state
 // topic is shared (dataTopic) and each entity extracts its own field via a
@@ -105,7 +105,7 @@ static void haPublishDiscovery()
     haSensor("pm10", "PM10", "pm10", "µg/m³", "measurement");
     haSensor("temperature", "Temperature", "temperature", "°C", "measurement");
     haSensor("humidity", "Humidity", "humidity", "%", "measurement");
-    if (co2.hasData())
+    if (co2SensorAvailable())
     {
         haSensor("co2", "CO2", "carbon_dioxide", "ppm", "measurement");
     }
