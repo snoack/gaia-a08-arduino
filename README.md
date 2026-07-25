@@ -80,7 +80,6 @@ The firmware uses the following libraries:
 | bblanchon/ArduinoJson            | ^7.1.0  |                           |
 | dvarrel/AHT20                    | ^1.0.0  | Temperature sensor driver |
 | adafruit/Adafruit NeoPixel       | ^1.15.1 | RGB LED driver            |
-| ESP32Async/ESPAsyncWebServer     | ^3.7.0  |                           |
 | github.com/tzapu/WiFiManager.git | 2.0.17  |                           |
 | ArduinoOTA                       | 2.0.0   | ESP32 framework built-in; optional OTA updates |
 

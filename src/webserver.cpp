@@ -17,34 +17,33 @@
  */
 
 #include "config.hpp"
-#include <WiFi.h>
 #include "network.hpp"
-#include "sensors.hpp"
-#include <ESPAsyncWebServer.h>
 
 #ifdef CONF_USE_WEB_SERVER
 
-AsyncWebServer server(80);
+#include <WebServer.h>
+#include "sensors.hpp"
 
-void webServerRealtimeHandler(AsyncWebServerRequest *request)
+static WebServer server(80);
+
+static void webServerRealtimeHandler()
 {
     JsonDocument doc = getSensorDataJson();
-
-    // AsyncResponseStream owns its buffer and is freed once the response has
-    // been sent, so the JSON does not have to outlive this handler. A shared
-    // buffer would not do: responses are sent asynchronously, and concurrent
-    // requests would overwrite each other's payload.
-    AsyncResponseStream *response =
-        request->beginResponseStream("application/json");
-    serializeJson(doc, *response);
-    request->send(response);
+    char response[320]; // worst-case sensor JSON length is currently 290 bytes
+    serializeJson(doc, response, sizeof(response));
+    response[sizeof(response) - 1] = '\0';
+    server.send(200, "application/json", response);
 }
 
 void webServerInit()
 {
-
     server.on("/realtime", HTTP_GET, webServerRealtimeHandler);
     server.begin();
+}
+
+void webServerHandle()
+{
+    server.handleClient();
 }
 
 #endif

@@ -3,7 +3,11 @@
 #define _GAIA_NETWORK
 
 void wifiInit();
+
+#ifdef CONF_USE_WEB_SERVER
 void webServerInit();
+void webServerHandle();
+#endif
 
 #ifdef CONF_MQTT
 void mqttInit();

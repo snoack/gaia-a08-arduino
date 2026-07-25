@@ -71,10 +71,16 @@ void setup()
 #endif
 }
 
+// Only non-blocking work belongs here: the short delay below sets
+// the polling cadence for everything in this loop, so anything that
+// blocks would stall it. Blocking work runs in its own task instead.
 void loop()
 {
+#ifdef CONF_USE_WEB_SERVER
+    webServerHandle();
+#endif
 #ifdef OTA_PASSWORD
     otaHandle();
 #endif
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
