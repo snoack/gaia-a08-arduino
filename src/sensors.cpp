@@ -23,6 +23,22 @@
 
 bool i2c_initialized = false;
 
+// Publish a reading, or null when the sensor has no current value. Null tells
+// Home Assistant (via the discovery availability template) that a sensor which
+// was producing readings has stopped, so it shows as unavailable.
+template <typename TVariant>
+void addOptionalReading(TVariant &&target, bool hasData, float value)
+{
+    if (hasData)
+    {
+        target.set(value);
+    }
+    else
+    {
+        target.set(nullptr);
+    }
+}
+
 void InitializeI2C()
 {
     if (i2c_initialized)
@@ -33,34 +49,47 @@ void InitializeI2C()
     Wire.begin(GPIO_SDA, GPIO_SCL);
 }
 
-bool getMinimalSensorData(JsonDocument &doc)
+void getMinimalSensorData(JsonDocument &doc)
 {
-    if (!pm25.hasData())
-    {
-        return false;
-    }
+    bool hasPm1 = pm1.hasData();
+    bool hasPm25 = pm25.hasData();
+    bool hasPm10 = pm10.hasData();
+    bool hasTemperature = temperature.hasData();
+    bool hasHumidity = humidity.hasData();
+    float pm1Avg = pm1.avg();
+    float pm25Avg = pm25.avg();
+    float pm10Avg = pm10.avg();
+    float temperatureAvg = temperature.avg();
+    float humidityAvg = humidity.avg();
 
     doc["station"]["id"] = stationID;
     doc["station"]["mac"] = mac;
 
     doc["station"]["location"]["latitude"] = LATITUDE;
     doc["station"]["location"]["longitude"] = LONGITUDE;
-    doc["readings"]["pm1"] = pm1.avg();
-    doc["readings"]["pm25"] = pm25.avg();
-    doc["readings"]["pm10"] = pm10.avg();
-    doc["readings"]["temperature"] = temperature.avg();
-    doc["readings"]["humidity"] = humidity.avg();
+    addOptionalReading(doc["readings"]["pm1"], hasPm1, pm1Avg);
+    addOptionalReading(doc["readings"]["pm25"], hasPm25, pm25Avg);
+    addOptionalReading(doc["readings"]["pm10"], hasPm10, pm10Avg);
+    addOptionalReading(doc["readings"]["temperature"], hasTemperature, temperatureAvg);
+    addOptionalReading(doc["readings"]["humidity"], hasHumidity, humidityAvg);
 
-    // aqicn.org Instant AQI (InstantCast) from the averaged PM concentrations.
-    AqiResult aqi = computeAqi(pm25.avg(), pm10.avg());
-    doc["readings"]["aqi"] = aqi.aqi;
-    doc["readings"]["main_pollutant"] = aqi.pollutant;
+    if (hasPm25 && hasPm10)
+    {
+        // aqicn.org Instant AQI (InstantCast) from the averaged PM concentrations.
+        AqiResult aqi = computeAqi(pm25Avg, pm10Avg);
+        doc["readings"]["aqi"] = aqi.aqi;
+        doc["readings"]["main_pollutant"] = aqi.pollutant;
+    }
+    else
+    {
+        doc["readings"]["aqi"] = nullptr;
+        doc["readings"]["main_pollutant"] = nullptr;
+    }
 
     if (co2.hasData())
     {
         doc["readings"]["co2"] = round(co2.avg());
     }
-    return true;
 }
 
 bool getSerialisedSensorData(JsonDocument &doc)

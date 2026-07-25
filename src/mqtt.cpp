@@ -75,11 +75,23 @@ static void haSensor(const char *key, const char *name, const char *devClass,
     cfg["dev"]["mf"] = "AQICN";
     cfg["dev"]["mdl"] = "A08";
 
+    // Layer a per-reading availability on top of the device availability above:
+    // the entity is available only when the device is online (avty[0]) and this
+    // reading has a value (avty[1]). A null reading marks the entity unavailable
+    // rather than letting the null render as an unknown value.
+    cfg["avty_mode"] = "all";
+    cfg["avty"][1]["t"] = dataTopic;
+    char availTpl[96]; // worst-case len is 75 chars (key "main_pollutant")
+    snprintf(availTpl, sizeof(availTpl),
+             "{{ 'offline' if value_json.readings.%s is none else 'online' }}",
+             key);
+    cfg["avty"][1]["val_tpl"] = availTpl;
+
     char topic[128];
     snprintf(topic, sizeof(topic),
              HOME_ASSISTANT_DISCOVERY_PREFIX "/sensor/%s/%s/config", mac, key);
 
-    char payload[512]; // worst-case json len is 354 bytes
+    char payload[576]; // worst-case json len is 495 bytes
     size_t len = serializeJson(cfg, payload, sizeof(payload));
     esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
 }
@@ -148,10 +160,7 @@ void mqttWorker(void *params)
         }
 
         JsonDocument doc;
-        if (!getMinimalSensorData(doc))
-        {
-            continue;
-        }
+        getMinimalSensorData(doc);
         static unsigned char json_body[320]; // worst-case json len is 280 bytes
         size_t json_len = serializeJson(doc, json_body, sizeof(json_body));
 
