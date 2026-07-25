@@ -91,15 +91,15 @@ public:
         if (count == 0)
             return 0;
 
-        T u = avg();
+        float u = avg();
         if (u < 0)
             return -1;
-        T t = 0;
+        float t = 0;
         for (int i = 0; i < count; i++)
         {
             t += (vals[i] - u) * (vals[i] - u);
         }
-        return sqrt(t) / count;
+        return sqrt(t / count);
     }
 
     int nOutliers()
