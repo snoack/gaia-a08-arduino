@@ -42,8 +42,8 @@ extern void ledInit();
 extern void indicatorReportAqi(float pm25, float pm10);
 
 // Apply a new state and persist it. Must be called from a single task only:
-// the NVS write below is not reentrant (if this ever needs more than one
-// caller, move the write into the rgbLedWorker task so there is a single writer).
+// the NVS write is not reentrant (if this ever needs more than one caller,
+// move the write into the ledWorker task).
 extern void indicatorSetState(const IndicatorState &state);
 extern IndicatorState indicatorGetState();
 

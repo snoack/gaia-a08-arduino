@@ -77,7 +77,6 @@ The firmware uses the following libraries:
 | -------------------------------- | ------- | ------------------------- |
 | fu-hsi/PMS Library               | ^1.1.0  | PMS5003 driver            |
 | sensirion/Sensirion I2C SCD4x    | ^0.4.0  | CO2 sensor driver         |
-| jandelgado/JLed                  | ^4.13.1 | RGB Led effects           |
 | bblanchon/ArduinoJson            | ^7.1.0  |                           |
 | dvarrel/AHT20                    | ^1.0.0  | Temperature sensor driver |
 | kitesurfer1404/WS2812FX          | ^1.4.4  | RGB Led driver            |

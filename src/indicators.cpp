@@ -17,7 +17,6 @@
  */
 
 #include <WS2812FX.h>
-#include <jled.h>
 #include <Preferences.h>
 #include <atomic>
 #include <string.h>
@@ -45,7 +44,7 @@ static constexpr char PREF_NAMESPACE[] = "gaia";
 static constexpr char PREF_LIGHT_KEY[] = "light";
 
 // WS2812FX drives the strip synchronously from whichever task calls it, so
-// only the rgbLedWorker task touches the LED. The tasks that set the state
+// only the ledWorker task touches the LED. The tasks that set the state
 // below and report AQI colors leave the painting to it.
 static std::atomic<IndicatorState> indicatorState{IndicatorState{
     .r = 0,
@@ -124,7 +123,7 @@ static void applyState(const IndicatorState &state, uint32_t aqiColor)
 // Runs in its own task rather than from loop(), which does not start until
 // setup() returns; setup() blocks for seconds in wifiInit(), and the strip
 // would otherwise sit unserviced (no boot rainbow) until then.
-static void rgbLedWorker(void *parameter)
+static void ledWorker(void *parameter)
 {
     while (1)
     {
@@ -171,32 +170,12 @@ IndicatorState indicatorGetState()
     return indicatorState.load(std::memory_order_relaxed);
 }
 
-auto led = JLed(GPIO_GREEN_LED);
-void ledLoop(void *parameter)
-{
-    while (1)
-    {
-        led.Update();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-}
-
 void ledInit()
 {
-    // To just turn off the Green LED, use:
-    // pinMode(GPIO_GREEN_LED, OUTPUT);
-    // digitalWrite(GPIO_GREEN_LED, LOW);
-    // To make the green LED breathe:
-    led.MaxBrightness(100).Breathe(2000).DelayAfter(1000).Forever();
-
-    xTaskCreate(
-        ledLoop,   // Function that should be called
-        "ledLoop", // Name of the task (for debugging)
-        1024,      // Stack size (bytes)
-        NULL,      // Parameter to pass
-        3,         // Task priority - medium
-        NULL       // Task handle
-    );
+    // Hold the green LED off: the RGB LED is the indicator now, and the green
+    // one is either hidden behind it or a distraction when the RGB is off.
+    pinMode(GPIO_GREEN_LED, OUTPUT);
+    digitalWrite(GPIO_GREEN_LED, LOW);
 
     // Load before touching the LED: a device that was turned off must not
     // flash on the way to finding that out.
@@ -219,12 +198,12 @@ void ledInit()
                reportedAqiColor.load(std::memory_order_relaxed));
 
     xTaskCreate(
-        rgbLedWorker,   // Function that should be called
-        "rgbLedWorker", // Name of the task (for debugging)
-        2048,           // Stack size (bytes)
-        NULL,           // Parameter to pass
-        3,              // Task priority - medium
-        NULL            // Task handle
+        ledWorker,   // Function that should be called
+        "ledWorker", // Name of the task (for debugging)
+        2048,        // Stack size (bytes)
+        NULL,        // Parameter to pass
+        3,           // Task priority - medium
+        NULL         // Task handle
     );
 }
 
