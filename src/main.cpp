@@ -76,6 +76,7 @@ void setup()
 // blocks would stall it. Blocking work runs in its own task instead.
 void loop()
 {
+    wifiReconnect();
 #ifdef CONF_USE_WEB_SERVER
     webServerHandle();
 #endif

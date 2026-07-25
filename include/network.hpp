@@ -4,6 +4,11 @@
 
 void wifiInit();
 
+// Force a Wi-Fi reconnect when the link has been down too long for the core's
+// own auto-reconnect to recover it (see wifi.cpp). Cheap to call every loop();
+// no-ops unless a reconnect is due.
+void wifiReconnect();
+
 #ifdef CONF_USE_WEB_SERVER
 void webServerInit();
 void webServerHandle();
