@@ -79,7 +79,7 @@ The firmware uses the following libraries:
 | sensirion/Sensirion I2C SCD4x    | ^0.4.0  | CO2 sensor driver         |
 | bblanchon/ArduinoJson            | ^7.1.0  |                           |
 | dvarrel/AHT20                    | ^1.0.0  | Temperature sensor driver |
-| kitesurfer1404/WS2812FX          | ^1.4.4  | RGB Led driver            |
+| adafruit/Adafruit NeoPixel       | ^1.15.1 | RGB LED driver            |
 | ESP32Async/ESPAsyncWebServer     | ^3.7.0  |                           |
 | github.com/tzapu/WiFiManager.git | 2.0.17  |                           |
 | ArduinoOTA                       | 2.0.0   | ESP32 framework built-in; optional OTA updates |
