@@ -77,7 +77,7 @@ void uploaderWorker(void *params)
         uploaderResetCurrentStatus();
 
         size_t json_len = measureJson(doc);
-        static unsigned char json_body[512]; // expected json len is 422
+        static unsigned char json_body[512]; // worst-case json len is 494 bytes
         serializeJson(doc, json_body, sizeof(json_body));
 
         Serial.printf("Posting: %s with len %d \n", json_body, json_len);

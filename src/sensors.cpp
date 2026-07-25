@@ -98,9 +98,9 @@ bool getSerialisedSensorData(JsonDocument &doc)
 
     if (co2.hasData())
     {
-        doc["readings"][4]["specie"] = "co2";
-        doc["readings"][4]["value"] = round(co2.avg());
-        doc["readings"][4]["unit"] = "ppm";
+        doc["readings"][5]["specie"] = "co2";
+        doc["readings"][5]["value"] = round(co2.avg());
+        doc["readings"][5]["unit"] = "ppm";
     }
 
     doc["token"] = TOKEN;
