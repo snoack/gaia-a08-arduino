@@ -1,14 +1,15 @@
 # GAIA A08 Firmware
 
-This repository is the open-source Arduino firmware used for the
-[GAIA A08](https://aqicn.org/gaia/a08/).
+This is an independently maintained fork of the open-source Arduino firmware for
+the [GAIA A08](https://aqicn.org/gaia/a08/) air-quality station. It is based on
+[aqicn/gaia-a08-arduino](https://github.com/aqicn/gaia-a08-arduino).
 
-[![PlatformIO CI](https://github.com/aqicn/gaia-a08-arduino/actions/workflows/compile-platformio.yml/badge.svg)](https://github.com/aqicn/gaia-a08-arduino/actions/workflows/compile-platformio.yml)
+[![PlatformIO CI](https://github.com/snoack/gaia-a08-arduino/actions/workflows/compile-platformio.yml/badge.svg)](https://github.com/snoack/gaia-a08-arduino/actions/workflows/compile-platformio.yml)
 
 ## Configuration
 
-To start with, you need to update the `config.h` file with your aqicn.org
-Data-Platform token and the station location:
+To start with, you need to update the `include/config.hpp` file with your
+aqicn.org Data-Platform token and the station location:
 
 ```C
 #define AQICN_TOKEN "dummy-token-for-test-purpose-only"
@@ -25,8 +26,7 @@ comment out `CONF_AQICN`; the token and coordinates aren't needed then.
 By default, the device will use the
 [Wi-Fi Manager](https://github.com/tzapu/WiFiManager) to connect to your Wi-Fi
 access point. If you want to configure a static Wi-Fi access point instead,
-comment out `CONF_USE_WIFI_MANAGER` and define `WIFI_SSID` and `WIFI_PASS` in
-the `config.h` file.
+comment out `CONF_USE_WIFI_MANAGER` and define `WIFI_SSID` and `WIFI_PASS`.
 
 ```C
 //#define CONF_USE_WIFI_MANAGER
@@ -129,14 +129,3 @@ the aqicn.org data-platform.
 - After flashing my custom firmware to the GAIA A08, can I revert back to stock
   firmware? Yes, you can flash back the stock firmware from this page:
   https://firmware.aqicn.org/gaia/updater/#/en/a08
-
-## Todo
-
-- [x] Add support for green LED breathing
-- [x] Add support for CO2 sensor
-- [x] Add support for uploading CO2 sensor temperature and humidity
-- [x] Add support for embedded HTTP server
-- [x] Add support for Wifi Manager
-- [x] Add support for platform IO
-- [ ] Add support for Dual PMS configuration
-- [ ] Add support for customizable PMS active duty cycle
