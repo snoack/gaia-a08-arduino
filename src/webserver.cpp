@@ -28,8 +28,7 @@ AsyncWebServer server(80);
 
 void webServerRealtimeHandler(AsyncWebServerRequest *request)
 {
-    JsonDocument doc;
-    getMinimalSensorData(doc);
+    JsonDocument doc = getSensorDataJson();
 
     static char json_body[512];
     serializeJson(doc, json_body, sizeof(json_body));

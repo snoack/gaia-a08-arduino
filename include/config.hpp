@@ -34,6 +34,12 @@ server from which one can get the real-time data.
 #define LATITUDE 28.7501
 #define LONGITUDE 77.1177
 
+/*
+Sensor.Community support. Before enabling this, register the device at
+https://devices.sensor.community/ — see README for instructions.
+*/
+// #define CONF_SENSOR_COMMUNITY
+
 #ifndef CONF_USE_WIFI_MANAGER
 // Only needed if the WiFi manager is not used
 #define WIFI_SSID "yourNetworkName"

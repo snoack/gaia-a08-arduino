@@ -26,8 +26,8 @@ bool i2c_initialized = false;
 // Publish a reading, or null when the sensor has no current value. Null tells
 // Home Assistant (via the discovery availability template) that a sensor which
 // was producing readings has stopped, so it shows as unavailable.
-template <typename TVariant>
-void addOptionalReading(TVariant &&target, bool hasData, float value)
+template <typename TVariant, typename TValue>
+void addOptionalReading(TVariant &&target, bool hasData, TValue value)
 {
     if (hasData)
     {
@@ -49,29 +49,31 @@ void InitializeI2C()
     Wire.begin(GPIO_SDA, GPIO_SCL);
 }
 
-void getMinimalSensorData(JsonDocument &doc)
+JsonDocument getSensorDataJson()
 {
-    float pm1Avg, pm25Avg, pm10Avg, temperatureAvg, humidityAvg;
-    bool hasPm1 = pm1.avg(pm1Avg);
-    bool hasPm25 = pm25.avg(pm25Avg);
-    bool hasPm10 = pm10.avg(pm10Avg);
-    bool hasTemperature = temperature.avg(temperatureAvg);
-    bool hasHumidity = humidity.avg(humidityAvg);
+    const SensorReadings readings = getSensorReadings();
+    JsonDocument doc;
 
     doc["station"]["id"] = stationID;
     doc["station"]["mac"] = mac;
     doc["station"]["location"]["latitude"] = LATITUDE;
     doc["station"]["location"]["longitude"] = LONGITUDE;
-    addOptionalReading(doc["readings"]["pm1"], hasPm1, pm1Avg);
-    addOptionalReading(doc["readings"]["pm25"], hasPm25, pm25Avg);
-    addOptionalReading(doc["readings"]["pm10"], hasPm10, pm10Avg);
-    addOptionalReading(doc["readings"]["temperature"], hasTemperature, temperatureAvg);
-    addOptionalReading(doc["readings"]["humidity"], hasHumidity, humidityAvg);
+    addOptionalReading(doc["readings"]["pm1"], readings.hasPm1, readings.pm1);
+    addOptionalReading(doc["readings"]["pm25"], readings.hasPm25, readings.pm25);
+    addOptionalReading(doc["readings"]["pm10"], readings.hasPm10, readings.pm10);
+    addOptionalReading(
+        doc["readings"]["temperature"],
+        readings.hasTemperature,
+        readings.temperature);
+    addOptionalReading(
+        doc["readings"]["humidity"],
+        readings.hasHumidity,
+        readings.humidity);
 
-    if (hasPm25 && hasPm10)
+    if (readings.hasPm25 && readings.hasPm10)
     {
         // aqicn.org Instant AQI (InstantCast) from the averaged PM concentrations.
-        AqiResult aqi = computeAqi(pm25Avg, pm10Avg);
+        AqiResult aqi = computeAqi(readings.pm25, readings.pm10);
         doc["readings"]["aqi"] = aqi.aqi;
         doc["readings"]["main_pollutant"] = aqi.pollutant;
     }
@@ -83,60 +85,28 @@ void getMinimalSensorData(JsonDocument &doc)
 
     if (co2SensorAvailable())
     {
-        float co2Avg;
-        bool hasCo2 = co2.avg(co2Avg);
-        addOptionalReading(doc["readings"]["co2"], hasCo2, round(co2Avg));
+        addOptionalReading(
+            doc["readings"]["co2"],
+            readings.hasCo2,
+            readings.co2);
     }
+
+    return doc;
 }
 
-bool getSerialisedSensorData(JsonDocument &doc)
+SensorReadings getSensorReadings()
 {
-    float pm25Avg;
-    if (!pm25.avg(pm25Avg))
-    {
-        return false;
-    }
-
-    float pm10Avg, pm1Avg, temperatureAvg, humidityAvg, co2Avg;
-    pm10.avg(pm10Avg);
-    pm1.avg(pm1Avg);
-    temperature.avg(temperatureAvg);
-    humidity.avg(humidityAvg);
-    bool hasCo2 = co2.avg(co2Avg);
-
-    doc["station"]["id"] = stationID;
-    doc["station"]["mac"] = mac;
-
-    doc["station"]["location"]["latitude"] = LATITUDE;
-    doc["station"]["location"]["longitude"] = LONGITUDE;
-
-    doc["readings"][0]["specie"] = "pm25";
-    doc["readings"][0]["value"] = pm25Avg;
-    doc["readings"][0]["unit"] = "µg/m3";
-
-    doc["readings"][1]["specie"] = "pm10";
-    doc["readings"][1]["value"] = pm10Avg;
-    doc["readings"][1]["unit"] = "µg/m3";
-
-    doc["readings"][2]["specie"] = "pm1";
-    doc["readings"][2]["value"] = pm1Avg;
-    doc["readings"][2]["unit"] = "µg/m3";
-
-    doc["readings"][3]["specie"] = "temperature";
-    doc["readings"][3]["value"] = temperatureAvg;
-    doc["readings"][3]["unit"] = "C";
-
-    doc["readings"][4]["specie"] = "humidity";
-    doc["readings"][4]["value"] = humidityAvg;
-    doc["readings"][4]["unit"] = "%";
-
-    if (hasCo2)
-    {
-        doc["readings"][5]["specie"] = "co2";
-        doc["readings"][5]["value"] = round(co2Avg);
-        doc["readings"][5]["unit"] = "ppm";
-    }
-
-    doc["token"] = TOKEN;
-    return true;
+    SensorReadings readings;
+    readings.hasPm1 = pm1.avg(readings.pm1);
+    readings.hasPm25 = pm25.avg(readings.pm25);
+    readings.hasPm10 = pm10.avg(readings.pm10);
+    readings.hasTemperature = temperature.avg(readings.temperature);
+    readings.hasHumidity = humidity.avg(readings.humidity);
+    // The sensor reports whole ppm and the value is only ever read by humans,
+    // where sub-ppm resolution from averaging is noise on a 400-5000 scale.
+    // Rounding here keeps every consumer consistent by construction.
+    float co2Avg;
+    readings.hasCo2 = co2.avg(co2Avg);
+    readings.co2 = (int)lroundf(co2Avg);
+    return readings;
 }

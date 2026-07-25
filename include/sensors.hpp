@@ -17,8 +17,18 @@ extern Accumulator<float> temperature, humidity;
 extern Accumulator<int> pm1, pm25, pm10;
 extern bool co2SensorAvailable();
 
-extern bool getSerialisedSensorData(JsonDocument &doc);
-extern void getMinimalSensorData(JsonDocument &doc);
+struct SensorReadings
+{
+    float pm1, pm25, pm10;
+    float temperature, humidity;
+    int co2;
+    bool hasPm1, hasPm25, hasPm10;
+    bool hasTemperature, hasHumidity;
+    bool hasCo2;
+};
+
+extern SensorReadings getSensorReadings();
+extern JsonDocument getSensorDataJson();
 extern bool i2c_initialized;
 
 #endif // _GAIA_SENSORS

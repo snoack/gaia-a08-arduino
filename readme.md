@@ -31,6 +31,23 @@ the `config.h` file.
 #define WIFI_PASS "yourNetworkPassword"
 ```
 
+### Sensor.Community
+
+Optionally, the firmware can publish air-quality measurements to
+[Sensor.Community](https://sensor.community/). Create an account at
+https://devices.sensor.community/ and register a new sensor. Complete the
+device fields as follows:
+
+- **Sensor ID:** Enter the MAC address without separators, exactly as reported
+  by the GAIA web interface or printed after `esp32-` in the boot log.
+- **Sensor Board:** Select `esp32`.
+- Under **Hardware configuration**, set the first **Sensor Type** to `PMS5003`.
+- Set the second **Sensor Type** to `AHT20`, or `HTU21D` if AHT20 is not available.
+- If the optional CO2 sensor is present, use **add component** and select
+  `SCD4x`, or `SCD30` if SCD4x is not available.
+
+Finally, enable `CONF_SENSOR_COMMUNITY` in `include/config.hpp`.
+
 ## Libraries
 
 The firmware uses the following libraries:

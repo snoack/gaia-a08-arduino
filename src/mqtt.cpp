@@ -159,9 +159,8 @@ void mqttWorker(void *params)
             continue;
         }
 
-        JsonDocument doc;
-        getMinimalSensorData(doc);
-        static unsigned char json_body[320]; // worst-case json len is 280 bytes
+        JsonDocument doc = getSensorDataJson();
+        static unsigned char json_body[320]; // worst-case json len is 290 bytes
         size_t json_len = serializeJson(doc, json_body, sizeof(json_body));
 
         // Serial.printf("Posting: %s with len %d \n", json_body, json_len);
