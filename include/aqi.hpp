@@ -48,7 +48,13 @@ struct AqiResult
 };
 AqiResult computeAqi(float pm25, float pm10);
 
-// The category band an AQI value falls into.
-AqiCategory aqiCategory(int aqi);
+// The category band and its inclusive AQI bounds.
+struct AqiCategoryResult
+{
+    AqiCategory category;
+    int aqiLow;
+    int aqiHigh;
+};
+AqiCategoryResult aqiCategory(int aqi);
 
 #endif // _GAIA_AQI

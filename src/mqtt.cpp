@@ -39,10 +39,11 @@ static char statusTopic[48];       // GAIA/<mac>/status     (device availability
 static char lightStateTopic[48];   // GAIA/<mac>/light      (light state echo)
 static char lightCommandTopic[52]; // GAIA/<mac>/light/set  (commands from HA)
 
-// The two effects Home Assistant offers for the light. "AQI" is the default
-// behavior (color follows the reading); "Solid" is a fixed color the user
-// picks. The rainbow shown at boot is internal and not exposed here.
+// The effects Home Assistant offers for the light. "AQI" uses category colors,
+// "AQI (continuous)" interpolates the reading, and "Solid" is user-selected.
+// The rainbow shown at boot is internal and not exposed here.
 static constexpr char HA_EFFECT_AQI[] = "AQI";
+static constexpr char HA_EFFECT_AQI_CONTINUOUS[] = "AQI (continuous)";
 static constexpr char HA_EFFECT_SOLID[] = "Solid";
 
 // Fill in the availability and device blocks shared by every discovery config,
@@ -129,7 +130,8 @@ static void haLight()
     cfg["bri_scl"] = INDICATOR_BRIGHTNESS_LEVELS;
     cfg["effect"] = true;
     cfg["fx_list"][0] = HA_EFFECT_AQI;
-    cfg["fx_list"][1] = HA_EFFECT_SOLID;
+    cfg["fx_list"][1] = HA_EFFECT_AQI_CONTINUOUS;
+    cfg["fx_list"][2] = HA_EFFECT_SOLID;
     cfg["ic"] = "mdi:led-on";
 
     haDevice(cfg);
@@ -152,7 +154,11 @@ static void publishLightState()
     IndicatorState state = indicatorGetState();
     JsonDocument doc;
     doc["state"] = state.on ? "ON" : "OFF";
-    doc["effect"] = state.mode == INDICATOR_MODE_USER ? HA_EFFECT_SOLID : HA_EFFECT_AQI;
+    doc["effect"] = state.mode == INDICATOR_MODE_USER
+                        ? HA_EFFECT_SOLID
+                        : state.mode == INDICATOR_MODE_AQI_CONTINUOUS
+                              ? HA_EFFECT_AQI_CONTINUOUS
+                              : HA_EFFECT_AQI;
     doc["brightness"] = std::max(1, (state.brightness + 1) * INDICATOR_BRIGHTNESS_LEVELS /
                                         (INDICATOR_BRIGHTNESS_MAX + 1));
     doc["color"]["r"] = state.r;
@@ -198,11 +204,14 @@ static void handleLightCommand(const char *data, int len)
         state.b = doc["color"]["b"];
         state.mode = INDICATOR_MODE_USER;
     }
-    if (doc["effect"].is<const char *>())
+    const char *effect = doc["effect"].as<const char *>();
+    if (effect)
     {
-        state.mode = strcmp(doc["effect"], HA_EFFECT_SOLID) == 0
+        state.mode = strcmp(effect, HA_EFFECT_SOLID) == 0
                          ? INDICATOR_MODE_USER
-                         : INDICATOR_MODE_AQI;
+                         : strcmp(effect, HA_EFFECT_AQI_CONTINUOUS) == 0
+                             ? INDICATOR_MODE_AQI_CONTINUOUS
+                             : INDICATOR_MODE_AQI;
     }
 
     indicatorSetState(state);

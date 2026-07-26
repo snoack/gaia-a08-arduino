@@ -6,10 +6,12 @@
 
 enum IndicatorMode : uint8_t
 {
-    // Color follows the measured AQI (see indicatorReportAqi).
+    // Color follows the measured AQI category.
     INDICATOR_MODE_AQI,
     // Color is whatever was last set explicitly.
     INDICATOR_MODE_USER,
+    // Color is smoothly interpolated from the measured AQI.
+    INDICATOR_MODE_AQI_CONTINUOUS,
 };
 
 static constexpr uint8_t INDICATOR_BRIGHTNESS_SIZE = 5;

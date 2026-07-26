@@ -27,17 +27,19 @@
 
 static Adafruit_NeoPixel pixels(RGB_LED_COUNT, GPIO_RGB_LED, NEO_GRB + NEO_KHZ800);
 
-// One color per AQI category, indexed by AqiCategory.
-const uint32_t aqi_colors[] = {
-    0x00ff00, // AQI_GOOD                 Green
-    0xffff00, // AQI_MODERATE             Yellow
-    0xff8000, // AQI_UNHEALTHY_SENSITIVE  Orange
-    0xff4000, // AQI_UNHEALTHY            Dark orange
-    0xff0000, // AQI_VERY_UNHEALTHY       Red
-    0xcc00ff  // AQI_HAZARDOUS            Purple
+// One hue per AQI category, indexed by AqiCategory. Negative hues wrap around
+// ColorHSV's 16-bit hue wheel, allowing red to interpolate toward purple via
+// magenta rather than traversing the rest of the spectrum.
+const int32_t aqi_hues[] = {
+     21845, // AQI_GOOD                 Green (120°)
+     10923, // AQI_MODERATE             Yellow (60°)
+      5462, // AQI_UNHEALTHY_SENSITIVE  Orange (30°)
+      2731, // AQI_UNHEALTHY            Dark orange (15°)
+         0, // AQI_VERY_UNHEALTHY       Red (0°)
+    -13107  // AQI_HAZARDOUS            Purple (288° / -72°)
 };
-static_assert(sizeof(aqi_colors) / sizeof(aqi_colors[0]) == AQI_CATEGORY_COUNT,
-              "aqi_colors must have one entry per AQI category");
+static_assert(sizeof(aqi_hues) / sizeof(aqi_hues[0]) == AQI_CATEGORY_COUNT,
+              "aqi_hues must have one entry per AQI category");
 
 static Preferences preferences;
 static constexpr char PREF_NAMESPACE[] = "gaia";
@@ -54,13 +56,8 @@ static std::atomic<IndicatorState> indicatorState{IndicatorState{
     .mode = INDICATOR_MODE_AQI,
 }};
 
-static std::atomic<uint32_t> reportedAqiColor{UINT32_MAX};
+static std::atomic<int> reportedAqi{-1};
 static std::atomic<bool> repaintPending{false};
-
-// Where the AQI signal stood at the last repaint. Taken on every repaint, not
-// only in AQI mode, so that returning to that mode does not compare against a
-// color from before the LED was set by hand.
-static uint32_t lastAqiColor = UINT32_MAX;
 
 // NeoPixel brightness: 0-1 are essentially off, so 2 is the lowest perceivable
 // level; 9 (corresponds to 10 in the original code using WS2812FX) was the max
@@ -72,7 +69,22 @@ static_assert(LED_BRIGHTNESS_MAX - LED_BRIGHTNESS_MIN + 1 ==
                   INDICATOR_BRIGHTNESS_LEVELS,
               "advertised brightness levels must match the rendered range");
 
-static void applyState(const IndicatorState &state, uint32_t aqiColor)
+static uint16_t aqiHue(int aqi, bool continuous)
+{
+    AqiCategoryResult range = aqiCategory(aqi);
+    if (!continuous || range.category == AQI_HAZARDOUS)
+    {
+        return (uint16_t)aqi_hues[range.category];
+    }
+
+    int aqiStart = std::max(0, range.aqiLow - 1);
+    int aqiPosition = aqi - aqiStart;
+    int aqiSpan = range.aqiHigh - aqiStart;
+    int32_t hueSpan = aqi_hues[range.category + 1] - aqi_hues[range.category];
+    return (uint16_t)(aqi_hues[range.category] + hueSpan * aqiPosition / aqiSpan);
+}
+
+static void applyState(const IndicatorState &state, int aqi)
 {
     uint32_t color;
     uint8_t brightness =
@@ -87,23 +99,31 @@ static void applyState(const IndicatorState &state, uint32_t aqiColor)
     {
         color = ((uint32_t)state.r << 16) | ((uint32_t)state.g << 8) | state.b;
     }
-    else if (aqiColor != UINT32_MAX)
-    {
-        color = aqiColor;
-    }
     else
     {
-        constexpr uint32_t RAINBOW_CYCLE_MS = 2560;
-        uint16_t hue = (millis() % RAINBOW_CYCLE_MS) * 65536 / RAINBOW_CYCLE_MS;
+        uint16_t hue;
+
+        if (aqi != -1)
+        {
+            hue = aqiHue(aqi, state.mode == INDICATOR_MODE_AQI_CONTINUOUS);
+        }
+        else
+        {
+            constexpr uint32_t RAINBOW_CYCLE_MS = 2560;
+            hue = (millis() % RAINBOW_CYCLE_MS) * 65536 / RAINBOW_CYCLE_MS;
+            brightness /= 2;
+        }
         color = pixels.ColorHSV(hue);
-        brightness /= 2;
     }
 
     pixels.setBrightness(LED_BRIGHTNESS_MIN + brightness);
     pixels.setPixelColor(0, color);
     pixels.show();
+}
 
-    lastAqiColor = aqiColor;
+static bool indicatorTracksAqi(const IndicatorState &state)
+{
+    return state.on && state.mode != INDICATOR_MODE_USER;
 }
 
 // Keep the LED animation independent of setup() and loop(). setup() performs
@@ -114,12 +134,11 @@ static void ledWorker(void *parameter)
     while (1)
     {
         IndicatorState state = indicatorState.load(std::memory_order_relaxed);
-        uint32_t aqiColor = reportedAqiColor.load(std::memory_order_relaxed);
+        int aqi = reportedAqi.load(std::memory_order_relaxed);
         if (repaintPending.exchange(false, std::memory_order_relaxed) ||
-            (state.on && state.mode == INDICATOR_MODE_AQI &&
-                (aqiColor != lastAqiColor || aqiColor == UINT32_MAX)))
+            (indicatorTracksAqi(state) && aqi == -1))
         {
-            applyState(state, aqiColor);
+            applyState(state, aqi);
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -170,7 +189,7 @@ void ledInit()
     pixels.begin();
 
     applyState(indicatorState.load(std::memory_order_relaxed),
-               reportedAqiColor.load(std::memory_order_relaxed));
+               reportedAqi.load(std::memory_order_relaxed));
 
     xTaskCreate(
         ledWorker,   // Function that should be called
@@ -187,6 +206,9 @@ void ledInit()
 // the indicator, the app, and aqicn.org all agree.
 void indicatorReportAqi(float pm25, float pm10)
 {
-    reportedAqiColor.store(aqi_colors[aqiCategory(computeAqi(pm25, pm10).aqi)],
-                           std::memory_order_relaxed);
+    reportedAqi.store(computeAqi(pm25, pm10).aqi, std::memory_order_relaxed);
+    if (indicatorTracksAqi(indicatorState.load(std::memory_order_relaxed)))
+    {
+        repaintPending.store(true, std::memory_order_relaxed);
+    }
 }

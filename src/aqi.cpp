@@ -90,16 +90,17 @@ AqiResult computeAqi(float pm25, float pm10)
     return {pm10Aqi, "pm10"};
 }
 
-AqiCategory aqiCategory(int aqi)
+AqiCategoryResult aqiCategory(int aqi)
 {
+    const AqiBand *band;
     for (int i = 0; i < AQI_BAND_COUNT; i++)
     {
-        if (aqi <= aqi_bands[i].aqiHigh)
+        band = &aqi_bands[i];
+        if (aqi <= band->aqiHigh)
         {
-            return aqi_bands[i].category;
+            break;
         }
     }
 
-    // Above the top of the table: clamp to the worst category.
-    return AQI_HAZARDOUS;
+    return {band->category, band->aqiLow, band->aqiHigh};
 }
