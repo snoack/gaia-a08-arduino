@@ -17,6 +17,29 @@ extern Accumulator<float> temperature, humidity;
 extern Accumulator<int> pm1, pm25, pm10;
 extern bool co2SensorAvailable();
 
+// PMS sensors are numbered from 0. The status says what the sensor is used for
+// right now. The fault is the last one detected, held until the sensor shows
+// that it has recovered, also while it is on standby.
+enum PmsStatus
+{
+    PMS_STANDBY,
+    PMS_WARMING_UP,
+    PMS_READING,
+    PMS_STATUS_COUNT,
+};
+enum PmsFault
+{
+    PMS_FAULT_NONE,
+    PMS_FAULT_IMPLAUSIBLE,
+    PMS_FAULT_UNRESPONSIVE,
+    PMS_FAULT_COUNT,
+};
+// Names used in the JSON payload and log; PMS_FAULT_NONE's name is null.
+extern const char *const pmsStatusNames[PMS_STATUS_COUNT];
+extern const char *const pmsFaultNames[PMS_FAULT_COUNT];
+extern PmsStatus pmsSensorStatus(int pmsNum);
+extern PmsFault pmsSensorFault(int pmsNum);
+
 struct SensorReadings
 {
     float pm1, pm25, pm10;

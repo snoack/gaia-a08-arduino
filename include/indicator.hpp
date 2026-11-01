@@ -42,6 +42,8 @@ static constexpr uint8_t INDICATOR_BRIGHTNESS_LEVELS = 8;
 extern void ledInit();
 
 extern void indicatorReportAqi(float pm25, float pm10);
+// Show that there is no current AQI, as before the first reading.
+extern void indicatorClearAqi();
 
 // Apply a new state and persist it. Must be called from a single task only:
 // the NVS write is not reentrant (if this ever needs more than one caller,

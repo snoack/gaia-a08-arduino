@@ -95,6 +95,15 @@ JsonDocument getSensorDataJson()
             readings.co2);
     }
 
+    for (int i = 0; i < NUM_PMS_SENSORS; i++)
+    {
+        char key[8];
+        snprintf(key, sizeof(key), "pms%d", i + 1);
+        JsonObject sensor = doc["sensors"][key].to<JsonObject>();
+        sensor["status"] = pmsStatusNames[pmsSensorStatus(i)];
+        sensor["fault"] = pmsFaultNames[pmsSensorFault(i)];
+    }
+
     return doc;
 }
 

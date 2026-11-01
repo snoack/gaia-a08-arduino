@@ -60,6 +60,20 @@ static void haDevice(JsonDocument &cfg)
     cfg["dev"]["mdl"] = "A08";
 }
 
+// Publish a discovery config (retained) for one of this node's entities.
+static void haPublishConfig(const char *component, const char *objectId,
+                            JsonDocument &cfg)
+{
+    char topic[128];
+    snprintf(topic, sizeof(topic),
+             HOME_ASSISTANT_DISCOVERY_PREFIX "/%s/%s/%s/config",
+             component, mac, objectId);
+
+    char payload[576]; // worst-case json len is 495 bytes (haSensor)
+    size_t len = serializeJson(cfg, payload, sizeof(payload));
+    esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
+}
+
 // Publish a single Home Assistant discovery config for one reading. The state
 // topic is shared (dataTopic) and each entity extracts its own field via a
 // value_template.
@@ -105,13 +119,55 @@ static void haSensor(const char *key, const char *name, const char *devClass,
              key);
     cfg["avty"][1]["val_tpl"] = availTpl;
 
-    char topic[128];
-    snprintf(topic, sizeof(topic),
-             HOME_ASSISTANT_DISCOVERY_PREFIX "/sensor/%s/%s/config", mac, key);
+    haPublishConfig("sensor", key, cfg);
+}
 
-    char payload[576]; // worst-case json len is 495 bytes
-    size_t len = serializeJson(cfg, payload, sizeof(payload));
-    esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
+// Publish a fault sensor that is on while a PMS sensor is in fault mode,
+// with its status and fault as attributes (e.g. for notifications).
+static void haPmsFault(int pmsNum)
+{
+    JsonDocument cfg;
+    char buf[64]; // worst-case value len is 62 chars (val_tpl)
+    snprintf(buf, sizeof(buf), "PM sensor %d fault", pmsNum + 1);
+    cfg["name"] = buf;
+    snprintf(buf, sizeof(buf), "%s_pms%d_fault", mac, pmsNum + 1);
+    cfg["uniq_id"] = buf;
+    cfg["stat_t"] = dataTopic;
+    snprintf(buf, sizeof(buf),
+             "{{ 'OFF' if value_json.sensors.pms%d.fault is none else 'ON' }}",
+             pmsNum + 1);
+    cfg["val_tpl"] = buf;
+    cfg["json_attr_t"] = dataTopic;
+    snprintf(buf, sizeof(buf), "{{ value_json.sensors.pms%d | tojson }}", pmsNum + 1);
+    cfg["json_attr_tpl"] = buf;
+    cfg["dev_cla"] = "problem";
+    cfg["ent_cat"] = "diagnostic";
+    haDevice(cfg);
+
+    snprintf(buf, sizeof(buf), "pms%d_fault", pmsNum + 1);
+    haPublishConfig("binary_sensor", buf, cfg);
+}
+
+// Publish an enum sensor for what a PMS sensor is currently used for.
+static void haPmsStatus(int pmsNum)
+{
+    JsonDocument cfg;
+    char buf[48];
+    snprintf(buf, sizeof(buf), "PM sensor %d status", pmsNum + 1);
+    cfg["name"] = buf;
+    snprintf(buf, sizeof(buf), "%s_pms%d_status", mac, pmsNum + 1);
+    cfg["uniq_id"] = buf;
+    cfg["stat_t"] = dataTopic;
+    snprintf(buf, sizeof(buf), "{{ value_json.sensors.pms%d.status }}", pmsNum + 1);
+    cfg["val_tpl"] = buf;
+    cfg["dev_cla"] = "enum";
+    copyArray(pmsStatusNames, cfg["ops"]);
+    cfg["ic"] = "mdi:fan";
+    cfg["ent_cat"] = "diagnostic";
+    haDevice(cfg);
+
+    snprintf(buf, sizeof(buf), "pms%d_status", pmsNum + 1);
+    haPublishConfig("sensor", buf, cfg);
 }
 
 // Publish the discovery config for the RGB LED as a JSON-schema light with
@@ -135,14 +191,7 @@ static void haLight()
     cfg["ic"] = "mdi:led-on";
 
     haDevice(cfg);
-
-    char topic[128];
-    snprintf(topic, sizeof(topic),
-             HOME_ASSISTANT_DISCOVERY_PREFIX "/light/%s/light/config", mac);
-
-    char payload[512];
-    size_t len = serializeJson(cfg, payload, sizeof(payload));
-    esp_mqtt_client_publish(client, topic, payload, len, 1, /*retain=*/1);
+    haPublishConfig("light", "light", cfg);
 }
 
 // Echo the stored light state so Home Assistant reflects it after a command or
@@ -241,6 +290,11 @@ static void haPublishDiscovery()
     haSensor("main_pollutant", "Dominant Pollutant", "enum", nullptr, nullptr,
              pollutantOptions, sizeof(pollutantOptions) / sizeof(pollutantOptions[0]),
              "mdi:molecule");
+    for (int i = 0; i < NUM_PMS_SENSORS; i++)
+    {
+        haPmsFault(i);
+        haPmsStatus(i);
+    }
     haLight();
 }
 #endif // CONF_HOME_ASSISTANT
@@ -302,7 +356,7 @@ void mqttWorker(void *params)
         }
 
         JsonDocument doc = getSensorDataJson();
-        static unsigned char json_body[320]; // worst-case json len is 290 bytes
+        static unsigned char json_body[448]; // worst-case json len is 410 bytes
         size_t json_len = serializeJson(doc, json_body, sizeof(json_body));
 
         // Serial.printf("Posting: %s with len %d \n", json_body, json_len);

@@ -212,3 +212,9 @@ void indicatorReportAqi(float pm25, float pm10)
         repaintPending.store(true, std::memory_order_relaxed);
     }
 }
+
+void indicatorClearAqi()
+{
+    // The LED worker keeps animating the no-data state on its own.
+    reportedAqi.store(-1, std::memory_order_relaxed);
+}

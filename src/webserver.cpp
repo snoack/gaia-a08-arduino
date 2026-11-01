@@ -29,7 +29,7 @@ static WebServer server(80);
 static void webServerRealtimeHandler()
 {
     JsonDocument doc = getSensorDataJson();
-    char response[320]; // worst-case sensor JSON length is currently 290 bytes
+    char response[448]; // worst-case sensor JSON length is currently 410 bytes
     serializeJson(doc, response, sizeof(response));
     response[sizeof(response) - 1] = '\0';
     server.send(200, "application/json", response);

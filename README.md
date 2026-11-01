@@ -69,6 +69,15 @@ up automatically. The RGB LED is also exposed as a light entity you can turn on
 and off, set to a color, or switch back to following the air quality via its
 **AQI** effect. The setting is remembered across reboots.
 
+Each PM sensor also gets two diagnostic entities: its status (`reading`,
+`warming_up` or `standby`) and a fault sensor. The firmware discards physically
+implausible PM readings (e.g. above 2000 µg/m³, twice the PMS5003's maximum
+range). A sensor that mostly sends implausible readings, or stops responding, is
+reported as a fault, with the reason (`implausible` or `unresponsive`) in its
+`fault` attribute. With two PM sensors, the station then keeps reporting from
+the healthy sensor, and checks on every duty cycle whether the faulty one has
+recovered.
+
 ## Libraries
 
 The firmware uses the following libraries:
