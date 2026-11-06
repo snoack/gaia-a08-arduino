@@ -78,6 +78,15 @@ reported as a fault, with the reason (`implausible` or `unresponsive`) in its
 the healthy sensor, and checks on every duty cycle whether the faulty one has
 recovered.
 
+### PM sampling
+
+The PMS sensors run continuously by default. To extend their lifespan, change
+`PMS_SAMPLE_INTERVAL` in `include/config.hpp` from -1 to a number of seconds,
+to sample that often instead: a sensor is warmed up for 30 seconds and read
+for a minute, and the average of that minute is published and uploaded, and
+reported until the next sample. Temperature, humidity and CO2 are read
+continuously either way.
+
 ## Libraries
 
 The firmware uses the following libraries:

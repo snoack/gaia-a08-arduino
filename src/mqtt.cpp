@@ -28,6 +28,7 @@
 #include "freertos/task.h"
 #include "mqtt_client.h"
 #include "indicator.hpp"
+#include "network.hpp"
 
 esp_mqtt_client_handle_t client;
 
@@ -315,6 +316,8 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         esp_mqtt_client_subscribe(client, lightCommandTopic, 1);
         publishLightState();
 #endif
+        // Replace the data retained from before rather than waiting a minute.
+        mqttPublishSoon();
         break;
     case MQTT_EVENT_DISCONNECTED:
         Serial.println("Disconnected from MQTT Broker.");
@@ -342,12 +345,24 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     }
 }
 
+static std::atomic<TaskHandle_t> mqttTask{nullptr};
+
+void mqttPublishSoon()
+{
+    TaskHandle_t task = mqttTask.load();
+    if (task)
+    {
+        xTaskNotifyGive(task);
+    }
+}
+
 void mqttWorker(void *params)
 {
 
     while (1)
     {
-        vTaskDelay(10000 / portTICK_PERIOD_MS); // 10 seconds
+        // Publish once a minute, or right away when notified.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(60 * 1000));
         // Check WiFi connection status
         if (WiFi.status() != WL_CONNECTED)
         {
@@ -411,21 +426,33 @@ void mqttInit()
         return;
     }
 
+    // Start the worker before connecting, so it's there to be notified.
+    TaskHandle_t task;
+    if (xTaskCreate(
+            mqttWorker,   // Function that should be called
+            "mqttWorker", // Name of the task (for debugging)
+            2048,         // Stack size (bytes)
+            NULL,         // Parameter to pass
+            3,            // Task priority - medium
+            &task         // Task handle
+            ) != pdPASS)
+    {
+        Serial.println("Failed to create the MQTT worker");
+        task = nullptr;
+    }
+    mqttTask.store(task);
+
     esp_mqtt_client_register_event(client, MQTT_EVENT_ANY, mqtt_event_handler, NULL);
     err = esp_mqtt_client_start(client);
     if (err != ESP_OK)
     {
         Serial.println("Failed to start the MQTT client");
+        if (task)
+        {
+            mqttTask.store(nullptr);
+            vTaskDelete(task);
+        }
         return;
     }
-
-    xTaskCreate(
-        mqttWorker,   // Function that should be called
-        "mqttWorker", // Name of the task (for debugging)
-        2048,         // Stack size (bytes)
-        NULL,         // Parameter to pass
-        3,            // Task priority - medium
-        NULL          // Task handle
-    );
 }
 #endif

@@ -110,9 +110,7 @@ JsonDocument getSensorDataJson()
 SensorReadings getSensorReadings()
 {
     SensorReadings readings;
-    readings.hasPm1 = pm1.avg(readings.pm1);
-    readings.hasPm25 = pm25.avg(readings.pm25);
-    readings.hasPm10 = pm10.avg(readings.pm10);
+    getPmReadings(readings);
     readings.hasTemperature = temperature.avg(readings.temperature);
     readings.hasHumidity = humidity.avg(readings.humidity);
     // The sensor reports whole ppm and the value is only ever read by humans,

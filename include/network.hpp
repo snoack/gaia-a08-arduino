@@ -14,6 +14,7 @@ void webServerHandle();
 
 #ifdef CONF_MQTT
 void mqttInit();
+void mqttPublishSoon();
 #endif
 
 #ifdef OTA_PASSWORD

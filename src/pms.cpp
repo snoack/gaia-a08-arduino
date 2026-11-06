@@ -2,7 +2,8 @@
 #include "sensors.hpp"
 #include "main.hpp"
 #include "config.hpp"
-#include "indicator.hpp"
+#include "network.hpp"
+#include "uploader.hpp"
 #include <atomic>
 
 /*
@@ -40,10 +41,16 @@ its recovery check: if it's still faulty at the end of the warm-up, it goes
 back to standby instead of taking over. If both sensors are faulty, they keep
 alternating, so that each one gets checked.
 
+With PMS_SAMPLE_INTERVAL set, the sensors don't run continuously. Instead,
+every interval, the next sensor is warmed up, then read for SAMPLE_TIME, and
+powered down again. The average of those readings is the sample that is
+reported until the next one is taken. The cycle is otherwise the same: fault
+detection is judged over the warm-up and the reading, and if the sensor whose
+turn it is turns out faulty when warmed up, the other one is warmed up right
+away to take the sample instead.
+
 */
 
-// how long each PMS sensor reports before switching to the other one
-constexpr unsigned long DUTY_CYCLE = 5 * 60 * 1000;
 // warm up time before a newly activated sensor's samples are used
 constexpr unsigned long WAIT_TIME = 30 * 1000;
 // frames per window in which a reading sensor's implausible share is judged
@@ -55,11 +62,20 @@ constexpr unsigned long UNRESPONSIVE_TIMEOUT = 10 * 1000;
 // well below the values seen from failed sensors (over 3000 µg/m³). The AQI
 // saturates far below either.
 constexpr uint16_t PM_MAX_PLAUSIBLE = 2000;
-// how long without reported readings before the indicator shows no data,
-// matching how long the accumulators keep readings
-constexpr unsigned long NO_DATA_TIMEOUT = 60 * 1000;
+#if PMS_SAMPLE_INTERVAL > 0
+// how often the next sensor is warmed up and read for a sample
+constexpr unsigned long CYCLE_TIME = PMS_SAMPLE_INTERVAL * 1000UL;
+// how long a sensor is read for each sample, at most as long as the
+// accumulators keep readings (a minute)
+constexpr unsigned long SAMPLE_TIME = 60 * 1000;
+static_assert(CYCLE_TIME >= WAIT_TIME + SAMPLE_TIME,
+              "PMS_SAMPLE_INTERVAL must be at least 90 seconds");
+#else
+// how long each PMS sensor reports before switching to the other one
+constexpr unsigned long CYCLE_TIME = 5 * 60 * 1000;
+#endif
 
-Accumulator<int> pm1, pm25, pm10;
+static Accumulator<int> pm1, pm25, pm10;
 
 void pmsSensorWorker(void *);
 
@@ -83,11 +99,64 @@ const char *const pmsFaultNames[PMS_FAULT_COUNT] = {nullptr, "implausible", "unr
 // Only the worker touches these.
 static int windowFrames[NUM_PMS_SENSORS], windowImplausible[NUM_PMS_SENSORS];
 static unsigned long lastFrame[NUM_PMS_SENSORS];
-static unsigned long lastReported;
+// whether anything that is published changed in this iteration of the worker
+static bool publishPending;
 
 // Written by the worker, read by the tasks reporting them.
 static std::atomic<int> reportedActivePms{-1}, reportedIncomingPms{-1};
 static std::atomic<PmsFault> pmsFault[NUM_PMS_SENSORS];
+
+static void averagePmReadings(PmReadings &readings)
+{
+    readings.hasPm1 = pm1.avg(readings.pm1);
+    readings.hasPm25 = pm25.avg(readings.pm25);
+    readings.hasPm10 = pm10.avg(readings.pm10);
+}
+
+#if PMS_SAMPLE_INTERVAL > 0
+// The last sample when sampling (none taken yet while zero-initialized). Only
+// the worker writes it, as a seqlock: sampleSeq is odd while the sample is being
+// updated, and readers retry if it was odd or changed. The sample itself isn't
+// atomic, so that it can be copied as a whole; the fences keep the copy between
+// the sequence accesses on each side.
+static PmReadings sample;
+static std::atomic<unsigned> sampleSeq{0};
+
+void getPmReadings(PmReadings &readings)
+{
+    unsigned seq;
+    do
+    {
+        seq = sampleSeq.load(std::memory_order_acquire);
+        readings = sample;
+        std::atomic_thread_fence(std::memory_order_acquire);
+    } while (seq & 1 || seq != sampleSeq.load(std::memory_order_relaxed));
+}
+
+// Average what the sensor reported this cycle into the sample, and have it
+// published and uploaded.
+static void takeSample()
+{
+    PmReadings s;
+    averagePmReadings(s);
+
+    unsigned seq = sampleSeq.load(std::memory_order_relaxed);
+    sampleSeq.store(++seq, std::memory_order_relaxed); // odd: being updated
+    std::atomic_thread_fence(std::memory_order_release);
+    sample = s;
+    sampleSeq.store(++seq, std::memory_order_release); // even: done
+
+    publishPending = true;
+#ifdef ANY_UPLOADER_ENABLED
+    uploaderUploadSoon();
+#endif
+}
+#else
+void getPmReadings(PmReadings &readings)
+{
+    averagePmReadings(readings);
+}
+#endif
 
 PmsStatus pmsSensorStatus(int pmsNum)
 {
@@ -106,6 +175,12 @@ PmsFault pmsSensorFault(int pmsNum)
 static bool sensorHealthy(int pmsNum)
 {
     return pmsNum != -1 && pmsSensorFault(pmsNum) == PMS_FAULT_NONE;
+}
+
+static bool otherSensorHealthy(int pmsNum)
+{
+    int other = (pmsNum + 1) % NUM_PMS_SENSORS;
+    return other != pmsNum && sensorHealthy(other);
 }
 
 // Enter or leave fault mode once a window is complete, or at the end of a
@@ -142,6 +217,7 @@ static void updateFault(int pmsNum, bool endOfWindow = false)
     {
         // Only this task writes the fault, so no read-modify-write is needed.
         pmsFault[pmsNum].store(fault, std::memory_order_relaxed);
+        publishPending = true;
         Serial.printf("PMS sensor %d fault: %s\n", pmsNum + 1,
                       fault == PMS_FAULT_NONE ? "none" : pmsFaultNames[fault]);
     }
@@ -208,11 +284,9 @@ void readSensor(int pmsNum, bool report)
         }
         if (report)
         {
-            lastReported = millis();
             pm1.add(pmsData.PM_AE_UG_1_0);
             pm25.add(pmsData.PM_AE_UG_2_5);
             pm10.add(pmsData.PM_AE_UG_10_0);
-            indicatorReportAqi(pmsData.PM_AE_UG_2_5, pmsData.PM_AE_UG_10_0);
         }
     }
 }
@@ -221,7 +295,15 @@ void pmsSensorWorker(void *parameters)
 {
     int activePms = -1;
     int incomingPms = -1;
+    // the sensor warmed up last, to take turns while none is active
+    int lastPms = -1;
     unsigned long cycleStart = 0;
+    unsigned long warmStart = 0;
+#if PMS_SAMPLE_INTERVAL > 0
+    unsigned long readStart = 0;
+    // whether this cycle's sample has been taken
+    bool sampled = false;
+#endif
 
     // Start with every sensor powered down; the state machine below powers one
     // up on the first iteration (no active sensor counts as unhealthy).
@@ -233,33 +315,60 @@ void pmsSensorWorker(void *parameters)
 
     while (1)
     {
+#if PMS_SAMPLE_INTERVAL > 0
+        if (activePms != -1 && millis() - readStart >= SAMPLE_TIME)
+        {
+            takeSample();
+            digitalWrite(enablePins[activePms], LOW);
+            Serial.printf("Took sample from PMS sensor %d\n", activePms + 1);
+            activePms = -1;
+            sampled = true;
+        }
+#endif
         if (incomingPms == -1)
         {
-            // Move on every duty cycle, or right away if the active sensor is
-            // unhealthy and the next one isn't known to be.
-            int nextPms = (activePms + 1) % NUM_PMS_SENSORS;
-            if (nextPms != activePms &&
-                (millis() - cycleStart >= DUTY_CYCLE ||
-                 (!sensorHealthy(activePms) && sensorHealthy(nextPms))))
+            // Move on every cycle, or right away if the next sensor isn't known
+            // to be unhealthy and is needed: when sampling, if none is active
+            // yet and this cycle's sample is still missing, otherwise if the
+            // active sensor is unhealthy.
+            int nextPms = ((activePms != -1 ? activePms : lastPms) + 1) % NUM_PMS_SENSORS;
+#if PMS_SAMPLE_INTERVAL > 0
+            bool canMoveOn = activePms == -1;
+            bool needed = !sampled;
+#else
+            bool canMoveOn = nextPms != activePms;
+            bool needed = !sensorHealthy(activePms);
+#endif
+            bool due = millis() - cycleStart >= CYCLE_TIME;
+            if (canMoveOn && (due || (needed && sensorHealthy(nextPms))))
             {
-                // Make-before-break: power up the incoming sensor while the active
-                // one keeps reporting, then start counting down its warm-up time.
-                incomingPms = nextPms;
+                // Power up the incoming sensor, make-before-break if another one
+                // is active, then start counting down its warm-up time.
+                incomingPms = lastPms = nextPms;
+#if PMS_SAMPLE_INTERVAL > 0
+                sampled = false;
+#endif
                 digitalWrite(enablePins[incomingPms], HIGH);
                 Serial.printf("Warming up PMS sensor %d\n", incomingPms + 1);
-                cycleStart = millis();
+                warmStart = millis();
+                // Moving on early keeps to the cycle, so that falling back from
+                // a faulty sensor doesn't delay the next cycle.
+                if (due)
+                {
+                    cycleStart = warmStart;
+                }
                 // Judge it only by what it sends during this warm-up.
                 windowFrames[incomingPms] = windowImplausible[incomingPms] = 0;
-                lastFrame[incomingPms] = cycleStart;
+                lastFrame[incomingPms] = warmStart;
             }
         }
-        else if (millis() - cycleStart >= WAIT_TIME)
+        else if (millis() - warmStart >= WAIT_TIME)
         {
             // The incoming sensor is warm. It takes over unless it's faulty
-            // and the active one isn't; otherwise it goes back to standby
-            // until the next duty cycle.
+            // and the other one isn't; otherwise it goes back to standby
+            // until the next cycle.
             updateFault(incomingPms, /*endOfWindow=*/true);
-            if (sensorHealthy(incomingPms) || !sensorHealthy(activePms))
+            if (sensorHealthy(incomingPms) || !otherSensorHealthy(incomingPms))
             {
                 if (activePms != -1)
                 {
@@ -267,6 +376,12 @@ void pmsSensorWorker(void *parameters)
                 }
                 Serial.printf("Switching to PMS sensor %d\n", incomingPms + 1);
                 activePms = incomingPms;
+#if PMS_SAMPLE_INTERVAL > 0
+                // The sample covers only this reading: readings left over
+                // from the previous one are at least CYCLE_TIME old by the
+                // time the sample is taken, so they have expired.
+                readStart = millis();
+#endif
             }
             else
             {
@@ -275,8 +390,13 @@ void pmsSensorWorker(void *parameters)
             }
             incomingPms = -1;
         }
-        reportedActivePms.store(activePms, std::memory_order_relaxed);
-        reportedIncomingPms.store(incomingPms, std::memory_order_relaxed);
+        if (activePms != reportedActivePms.load(std::memory_order_relaxed) ||
+            incomingPms != reportedIncomingPms.load(std::memory_order_relaxed))
+        {
+            reportedActivePms.store(activePms, std::memory_order_relaxed);
+            reportedIncomingPms.store(incomingPms, std::memory_order_relaxed);
+            publishPending = true;
+        }
 
         if (activePms != -1)
         {
@@ -287,9 +407,14 @@ void pmsSensorWorker(void *parameters)
         {
             readSensor(incomingPms, false);
         }
-        if (millis() - lastReported >= NO_DATA_TIMEOUT)
+        // Publish once per iteration, so that changes happening together are
+        // published together.
+        if (publishPending)
         {
-            indicatorClearAqi();
+#ifdef CONF_MQTT
+            mqttPublishSoon();
+#endif
+            publishPending = false;
         }
 
         vTaskDelay(1000 / portTICK_PERIOD_MS);

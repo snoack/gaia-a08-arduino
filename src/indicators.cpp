@@ -56,7 +56,6 @@ static std::atomic<IndicatorState> indicatorState{IndicatorState{
     .mode = INDICATOR_MODE_AQI,
 }};
 
-static std::atomic<int> reportedAqi{-1};
 static std::atomic<bool> repaintPending{false};
 
 // NeoPixel brightness: 0-1 are essentially off, so 2 is the lowest perceivable
@@ -84,7 +83,11 @@ static uint16_t aqiHue(int aqi, bool continuous)
     return (uint16_t)(aqi_hues[range.category] + hueSpan * aqiPosition / aqiSpan);
 }
 
-static void applyState(const IndicatorState &state, int aqi)
+// Paint the LED. In the AQI modes, it shows the combined AQI (max of the PM2.5
+// and PM10 sub-indices) of the PM readings that are published to Home Assistant
+// and the web server, so that the indicator, the app, and aqicn.org all agree,
+// also on when there is no data.
+static void applyState(const IndicatorState &state)
 {
     uint32_t color;
     uint8_t brightness =
@@ -102,9 +105,12 @@ static void applyState(const IndicatorState &state, int aqi)
     else
     {
         uint16_t hue;
+        PmReadings readings;
+        getPmReadings(readings);
 
-        if (aqi != -1)
+        if (readings.hasPm25 && readings.hasPm10)
         {
+            int aqi = computeAqi(readings.pm25, readings.pm10).aqi;
             hue = aqiHue(aqi, state.mode == INDICATOR_MODE_AQI_CONTINUOUS);
         }
         else
@@ -112,6 +118,8 @@ static void applyState(const IndicatorState &state, int aqi)
             constexpr uint32_t RAINBOW_CYCLE_MS = 2560;
             hue = (millis() % RAINBOW_CYCLE_MS) * 65536 / RAINBOW_CYCLE_MS;
             brightness /= 2;
+            // Animate it by repainting right away.
+            repaintPending.store(true, std::memory_order_relaxed);
         }
         color = pixels.ColorHSV(hue);
     }
@@ -121,24 +129,25 @@ static void applyState(const IndicatorState &state, int aqi)
     pixels.show();
 }
 
-static bool indicatorTracksAqi(const IndicatorState &state)
-{
-    return state.on && state.mode != INDICATOR_MODE_USER;
-}
-
 // Keep the LED animation independent of setup() and loop(). setup() performs
 // synchronous initialization after starting this task, including WiFiManager's
 // saved-credential attempt, and loop() has exceptional blocking operations.
 static void ledWorker(void *parameter)
 {
+    TickType_t lastPaint = xTaskGetTickCount();
     while (1)
     {
+        // Take the pending repaint before loading the state it's for (pairing
+        // with indicatorSetState()), so that a state set in between is painted.
+        bool repaint = repaintPending.exchange(false, std::memory_order_acquire);
         IndicatorState state = indicatorState.load(std::memory_order_relaxed);
-        int aqi = reportedAqi.load(std::memory_order_relaxed);
-        if (repaintPending.exchange(false, std::memory_order_relaxed) ||
-            (indicatorTracksAqi(state) && aqi == -1))
+        // While showing the AQI, repaint once a second to follow the published
+        // readings.
+        if (repaint || (state.on && state.mode != INDICATOR_MODE_USER &&
+                        xTaskGetTickCount() - lastPaint >= pdMS_TO_TICKS(1000)))
         {
-            applyState(state, aqi);
+            lastPaint = xTaskGetTickCount();
+            applyState(state);
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -148,7 +157,7 @@ static void ledWorker(void *parameter)
 void indicatorSetState(const IndicatorState &state)
 {
     IndicatorState previous = indicatorState.exchange(state, std::memory_order_relaxed);
-    repaintPending.store(true, std::memory_order_relaxed);
+    repaintPending.store(true, std::memory_order_release);
 
     // Commands are user-initiated and rare, but Home Assistant re-sends on
     // reconnect, so only write flash when something actually differs.
@@ -188,8 +197,7 @@ void ledInit()
 
     pixels.begin();
 
-    applyState(indicatorState.load(std::memory_order_relaxed),
-               reportedAqi.load(std::memory_order_relaxed));
+    applyState(indicatorState.load(std::memory_order_relaxed));
 
     xTaskCreate(
         ledWorker,   // Function that should be called
@@ -199,22 +207,4 @@ void ledInit()
         3,           // Task priority - medium
         NULL         // Task handle
     );
-}
-
-// Drive the RGB LED from the same combined AQI signal (max of the PM2.5 and
-// PM10 sub-indices) that is published to Home Assistant and the web server, so
-// the indicator, the app, and aqicn.org all agree.
-void indicatorReportAqi(float pm25, float pm10)
-{
-    reportedAqi.store(computeAqi(pm25, pm10).aqi, std::memory_order_relaxed);
-    if (indicatorTracksAqi(indicatorState.load(std::memory_order_relaxed)))
-    {
-        repaintPending.store(true, std::memory_order_relaxed);
-    }
-}
-
-void indicatorClearAqi()
-{
-    // The LED worker keeps animating the no-data state on its own.
-    reportedAqi.store(-1, std::memory_order_relaxed);
 }

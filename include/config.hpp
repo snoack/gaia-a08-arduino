@@ -106,5 +106,14 @@ builds can be uploaded over WiFi with PlatformIO's release-ota environment.
 // Set to 2 if you have two PMS sensors connected
 #define NUM_PMS_SENSORS 1
 
+// Set to -1 to run the PMS sensors continuously (alternating if there are
+// two), with the PM readings being the averages of the last minute. To extend
+// the sensors' lifespan, set it to a number of seconds (at least 90, e.g. 180)
+// to sample that often instead: the next sensor is powered up, warmed up for 30
+// seconds, read for a minute, and powered down again. The average of that
+// minute is then published and uploaded, and reported until the next sample.
+// With Sensor.Community, keep it at 300 or less to stay on their map.
+#define PMS_SAMPLE_INTERVAL -1
+
 // Comment to disable printing of debug values to the serial console
 #define DEBUG_SENSOR_VALUES

@@ -14,7 +14,6 @@ void InitializeI2C();
 // Sensor value accumulators
 extern Accumulator<int> co2;
 extern Accumulator<float> temperature, humidity;
-extern Accumulator<int> pm1, pm25, pm10;
 extern bool co2SensorAvailable();
 
 // PMS sensors are numbered from 0. The status says what the sensor is used for
@@ -40,17 +39,24 @@ extern const char *const pmsFaultNames[PMS_FAULT_COUNT];
 extern PmsStatus pmsSensorStatus(int pmsNum);
 extern PmsFault pmsSensorFault(int pmsNum);
 
-struct SensorReadings
+struct PmReadings
 {
     float pm1, pm25, pm10;
+    bool hasPm1, hasPm25, hasPm10;
+};
+
+struct SensorReadings : PmReadings
+{
     float temperature, humidity;
     int co2;
-    bool hasPm1, hasPm25, hasPm10;
     bool hasTemperature, hasHumidity;
     bool hasCo2;
 };
 
 extern SensorReadings getSensorReadings();
+// Fill in the PM readings: the live averages, or with PMS_SAMPLE_INTERVAL set,
+// the last sample's.
+extern void getPmReadings(PmReadings &readings);
 extern JsonDocument getSensorDataJson();
 extern bool i2c_initialized;
 

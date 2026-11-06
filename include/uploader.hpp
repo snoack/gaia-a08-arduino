@@ -4,6 +4,7 @@
 #if defined(CONF_AQICN) || defined(CONF_SENSOR_COMMUNITY) || defined(CONF_OPENSENSEMAP)
 #define ANY_UPLOADER_ENABLED
 extern void uploaderInit();
+extern void uploaderUploadSoon();
 #endif
 
 #endif

@@ -294,17 +294,36 @@ static void uploadDataToAqicn(const SensorReadings &readings)
 // to send more than once per minute, while requiring data to be sent at least
 // every 5 minutes to show as online on their map, with their own firmware
 // sending every 145s. Uploading once a minute therefore satisfies all of them,
-// and keeps a single schedule for every uploader.
+// and keeps a single schedule for every uploader. With PMS_SAMPLE_INTERVAL
+// set, each PM sample is uploaded instead, which is at most every 90s.
 // https://github.com/sensebox/node-sketch-templater/blob/master/templates/homev2_ethernet.tpl
 // https://forum.sensor.community/t/how-often-should-i-send-data-to-https-api-sensor-community-v1-push-sensor-data/785
 static constexpr TickType_t UPLOAD_INTERVAL = pdMS_TO_TICKS(60 * 1000);
 
+static std::atomic<TaskHandle_t> uploaderTask{nullptr};
+
+void uploaderUploadSoon()
+{
+    TaskHandle_t task = uploaderTask.load();
+    if (task)
+    {
+        xTaskNotifyGive(task);
+    }
+}
+
 void uploaderWorker(void *params)
 {
+#if PMS_SAMPLE_INTERVAL <= 0
     const TickType_t startedAt = xTaskGetTickCount();
+#endif
 
     while (1)
     {
+#if PMS_SAMPLE_INTERVAL > 0
+        // Wait for the next PM sample. Samples taken during an overrunning
+        // upload are merged into one notification rather than queued up.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+#else
         // Sleep until the next interval boundary. Deriving the delay from the
         // elapsed time keeps the uploads aligned to the interval without
         // accumulating drift, and a cycle that overruns simply misses
@@ -312,6 +331,7 @@ void uploaderWorker(void *params)
         // exceed the rate the servers expect.
         TickType_t elapsed = xTaskGetTickCount() - startedAt;
         vTaskDelay(UPLOAD_INTERVAL - elapsed % UPLOAD_INTERVAL);
+#endif
 
         // Check WiFi connection status
         if (WiFi.status() != WL_CONNECTED)
@@ -344,13 +364,19 @@ void uploaderWorker(void *params)
 
 void uploaderInit()
 {
-    xTaskCreate(
-        uploaderWorker,   // Function that should be called
-        "uploaderWorker", // Name of the task (for debugging)
-        8192,             // Stack size (bytes)
-        NULL,             // Parameter to pass
-        3,                // Task priority - medium
-        NULL              // Task handle
-    );
+    TaskHandle_t task;
+    if (xTaskCreate(
+            uploaderWorker,   // Function that should be called
+            "uploaderWorker", // Name of the task (for debugging)
+            8192,             // Stack size (bytes)
+            NULL,             // Parameter to pass
+            3,                // Task priority - medium
+            &task             // Task handle
+            ) != pdPASS)
+    {
+        Serial.println("Failed to create the uploader worker");
+        return;
+    }
+    uploaderTask.store(task);
 }
 #endif
