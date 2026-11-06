@@ -106,11 +106,16 @@ static bool publishPending;
 static std::atomic<int> reportedActivePms{-1}, reportedIncomingPms{-1};
 static std::atomic<PmsFault> pmsFault[NUM_PMS_SENSORS];
 
+// The sensors report whole µg/m³, so the averages are rounded to tenths (see
+// getSensorReadings()).
 static void averagePmReadings(PmReadings &readings)
 {
     readings.hasPm1 = pm1.avg(readings.pm1);
     readings.hasPm25 = pm25.avg(readings.pm25);
     readings.hasPm10 = pm10.avg(readings.pm10);
+    readings.pm1 = roundToTenth(readings.pm1);
+    readings.pm25 = roundToTenth(readings.pm25);
+    readings.pm10 = roundToTenth(readings.pm10);
 }
 
 #if PMS_SAMPLE_INTERVAL > 0

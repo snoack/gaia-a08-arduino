@@ -107,15 +107,22 @@ JsonDocument getSensorDataJson()
     return doc;
 }
 
+// Averages are rounded to what the sensors can resolve, so that consumers get
+// no noise from averaging, and Home Assistant records a new state only when a
+// reading changes meaningfully. Rounding where the readings are averaged keeps
+// every consumer consistent by construction (PM is averaged and rounded in
+// pms.cpp).
 SensorReadings getSensorReadings()
 {
     SensorReadings readings;
     getPmReadings(readings);
+    // The temperature/humidity sensors are accurate to about ±0.3 °C and ±2 %.
     readings.hasTemperature = temperature.avg(readings.temperature);
-    readings.hasHumidity = humidity.avg(readings.humidity);
-    // The sensor reports whole ppm and the value is only ever read by humans,
-    // where sub-ppm resolution from averaging is noise on a 400-5000 scale.
-    // Rounding here keeps every consumer consistent by construction.
+    readings.temperature = roundToTenth(readings.temperature);
+    float humidityAvg;
+    readings.hasHumidity = humidity.avg(humidityAvg);
+    readings.humidity = (int)lroundf(humidityAvg);
+    // The CO2 sensor reports whole ppm.
     float co2Avg;
     readings.hasCo2 = co2.avg(co2Avg);
     readings.co2 = (int)lroundf(co2Avg);

@@ -20,6 +20,14 @@
 #include <Arduino.h>
 #include <atomic>
 
+// Round an average to tenths. Dividing rather than multiplying by 0.1, which
+// floats can't represent, gives the float closest to the rounded value, so
+// that it's serialized as such.
+inline float roundToTenth(float value)
+{
+    return roundf(value * 10) / 10;
+}
+
 template <typename T>
 class Accumulator
 {

@@ -47,7 +47,8 @@ struct PmReadings
 
 struct SensorReadings : PmReadings
 {
-    float temperature, humidity;
+    float temperature;
+    int humidity;
     int co2;
     bool hasTemperature, hasHumidity;
     bool hasCo2;
