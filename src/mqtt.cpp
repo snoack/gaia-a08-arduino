@@ -431,7 +431,7 @@ void mqttInit()
     if (xTaskCreate(
             mqttWorker,   // Function that should be called
             "mqttWorker", // Name of the task (for debugging)
-            2048,         // Stack size (bytes)
+            3072,         // Stack size (bytes)
             NULL,         // Parameter to pass
             3,            // Task priority - medium
             &task         // Task handle

@@ -250,7 +250,7 @@ void pmsSensorInit()
     xTaskCreate(
         pmsSensorWorker,   // Function that should be called
         "pmsSensorWorker", // Name of the task (for debugging)
-        2048,              // Stack size (bytes)
+        3072,              // Stack size (bytes)
         NULL,              // Parameter to pass
         3,                 // Task priority - medium
         NULL               // Task handle
